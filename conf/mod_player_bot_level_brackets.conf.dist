@@ -1,0 +1,56 @@
+[worldserver]
+
+########################################
+# mod-bot-level-distribution configuration
+########################################
+#
+#    BotDistribution.DebugMode
+#        Description: Enables debug logging for the Bot Level Distribution module.
+#        Default:     0 (disabled)
+#                     Valid values: 0 (off) / 1 (on)
+BotDistribution.DebugMode = 0
+
+#    BotDistribution.CheckFrequency
+#        Description: The frequency (in seconds) at which the bot level distribution check is performed.
+#        Default:     300
+BotDistribution.CheckFrequency = 300
+
+#    BotDistribution.Range1Pct
+#        Description: Desired percentage of bots within level range 1-10.
+#        Default:     14
+BotDistribution.Range1Pct = 14
+
+#    BotDistribution.Range2Pct
+#        Description: Desired percentage of bots within level range 11-20.
+#        Default:     12
+BotDistribution.Range2Pct = 12
+
+#    BotDistribution.Range3Pct
+#        Description: Desired percentage of bots within level range 21-30.
+#        Default:     12
+BotDistribution.Range3Pct = 12
+
+#    BotDistribution.Range4Pct
+#        Description: Desired percentage of bots within level range 31-40.
+#        Default:     12
+BotDistribution.Range4Pct = 12
+
+#    BotDistribution.Range5Pct
+#        Description: Desired percentage of bots within level range 41-50.
+#        Default:     12
+BotDistribution.Range5Pct = 12
+
+#    BotDistribution.Range6Pct
+#        Description: Desired percentage of bots within level range 51-60.
+#        Default:     12
+BotDistribution.Range6Pct = 12
+
+#    BotDistribution.Range7Pct
+#        Description: Desired percentage of bots within level range 61-70.
+#        Default:     12
+BotDistribution.Range7Pct = 12
+
+#    BotDistribution.Range8Pct
+#        Description: Desired percentage of bots within level range 71-80.
+#        Default:     14
+BotDistribution.Range8Pct = 14
