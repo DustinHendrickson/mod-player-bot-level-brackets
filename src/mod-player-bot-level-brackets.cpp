@@ -105,8 +105,8 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex)
             // This target range is invalid for Death Knights.
             if (g_BotDistDebugMode)
             {
-                LOG_INFO("server.loading", "[BotLevelBrackets] AdjustBotToRange: Cannot assign Death Knight '{}' to range {}-{} (below level 55).",
-                         bot->GetName(), lowerBound, upperBound);
+                LOG_INFO("server.loading", "[BotLevelBrackets] AdjustBotToRange: Cannot assign Death Knight '{}' ({}) to range {}-{} (below level 55).",
+                         bot->GetName(), bot->GetLevel(), lowerBound, upperBound);
             }
             return;
         }
@@ -144,8 +144,8 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex)
     {
         PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(bot);
         std::string playerClassName = botAI ? botAI->GetChatHelper()->FormatClass(bot->getClass()) : "Unknown";
-        LOG_INFO("server.loading", "[BotLevelBrackets] AdjustBotToRange: Bot '{}' - {} adjusted to level {} (target range {}-{}).",
-                 bot->GetName(), playerClassName, newLevel, g_LevelRanges[targetRangeIndex].lower, g_LevelRanges[targetRangeIndex].upper);
+        LOG_INFO("server.loading", "[BotLevelBrackets] AdjustBotToRange: Bot '{}' - {} ({}) adjusted to level {} (target range {}-{}).",
+                 bot->GetName(), playerClassName, bot->GetLevel(), newLevel, g_LevelRanges[targetRangeIndex].lower, g_LevelRanges[targetRangeIndex].upper);
     }
 
     // Execute the maintenance action.
