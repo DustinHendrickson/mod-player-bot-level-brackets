@@ -60,16 +60,16 @@ Customize the module’s behavior by editing the `mod-bot-level-brackets.conf` f
 
 Setting                          | Description                                                                                                    | Default | Valid Values
 -------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------- | --------------------
-BotDistribution.DebugMode        | Enables detailed debug logging for module operations.                                                        | 0       | 0 (off) / 1 (on)
-BotDistribution.CheckFrequency   | Frequency (in seconds) for performing the bot bracket distribution check.                                      | 300     | Positive Integer
-BotDistribution.Range1Pct        | Desired percentage of bots in level bracket 1-10.                                                              | 14      | 0-100
-BotDistribution.Range2Pct        | Desired percentage of bots in level bracket 11-20.                                                             | 12      | 0-100
-BotDistribution.Range3Pct        | Desired percentage of bots in level bracket 21-30.                                                             | 12      | 0-100
-BotDistribution.Range4Pct        | Desired percentage of bots in level bracket 31-40.                                                             | 12      | 0-100
-BotDistribution.Range5Pct        | Desired percentage of bots in level bracket 41-50.                                                             | 12      | 0-100
-BotDistribution.Range6Pct        | Desired percentage of bots in level bracket 51-60.                                                             | 12      | 0-100
-BotDistribution.Range7Pct        | Desired percentage of bots in level bracket 61-70.                                                             | 12      | 0-100
-BotDistribution.Range8Pct        | Desired percentage of bots in level bracket 71-80.                                                             | 14      | 0-100
+BotLevelBrackets.DebugMode        | Enables detailed debug logging for module operations.                                                        | 0       | 0 (off) / 1 (on)
+BotLevelBrackets.CheckFrequency   | Frequency (in seconds) for performing the bot bracket distribution check.                                      | 300     | Positive Integer
+BotLevelBrackets.Range1Pct        | Desired percentage of bots in level bracket 1-10.                                                              | 14      | 0-100
+BotLevelBrackets.Range2Pct        | Desired percentage of bots in level bracket 11-20.                                                             | 12      | 0-100
+BotLevelBrackets.Range3Pct        | Desired percentage of bots in level bracket 21-30.                                                             | 12      | 0-100
+BotLevelBrackets.Range4Pct        | Desired percentage of bots in level bracket 31-40.                                                             | 12      | 0-100
+BotLevelBrackets.Range5Pct        | Desired percentage of bots in level bracket 41-50.                                                             | 12      | 0-100
+BotLevelBrackets.Range6Pct        | Desired percentage of bots in level bracket 51-60.                                                             | 12      | 0-100
+BotLevelBrackets.Range7Pct        | Desired percentage of bots in level bracket 61-70.                                                             | 12      | 0-100
+BotLevelBrackets.Range8Pct        | Desired percentage of bots in level bracket 71-80.                                                             | 14      | 0-100
 
 *Note: The sum of all bracket percentages must equal 100.*
 
@@ -77,7 +77,7 @@ Debugging
 ---------
 To enable detailed debug logging, update the configuration file:
 
-    BotDistribution.DebugMode = 1
+    BotLevelBrackets.DebugMode = 1
 
 This setting outputs logs detailing bot level adjustments, item destruction, pet removal, and the execution of auto-maintenance actions.
 
