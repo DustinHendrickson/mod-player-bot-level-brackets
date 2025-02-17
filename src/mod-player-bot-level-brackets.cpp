@@ -30,30 +30,30 @@ static bool   g_BotDistDebugMode      = false;
 
 // Loads the configuration from the config file.
 // Expected keys (with example default percentages):
-//   BotDistribution.Range1Pct = 14
-//   BotDistribution.Range2Pct = 12
-//   BotDistribution.Range3Pct = 12
-//   BotDistribution.Range4Pct = 12
-//   BotDistribution.Range5Pct = 12
-//   BotDistribution.Range6Pct = 12
-//   BotDistribution.Range7Pct = 12
-//   BotDistribution.Range8Pct = 14
+//   BotLevelBrackets.Range1Pct = 14
+//   BotLevelBrackets.Range2Pct = 12
+//   BotLevelBrackets.Range3Pct = 12
+//   BotLevelBrackets.Range4Pct = 12
+//   BotLevelBrackets.Range5Pct = 12
+//   BotLevelBrackets.Range6Pct = 12
+//   BotLevelBrackets.Range7Pct = 12
+//   BotLevelBrackets.Range8Pct = 14
 // Additionally:
-//   BotDistribution.CheckFrequency (in seconds)
-//   BotDistribution.DebugMode (true/false)
-static void LoadBotDistributionConfig()
+//   BotLevelBrackets.CheckFrequency (in seconds)
+//   BotLevelBrackets.DebugMode (true/false)
+static void LoadBotLevelBracketsConfig()
 {
-    g_BotDistDebugMode = sConfigMgr->GetOption<bool>("BotDistribution.DebugMode", false);
-    g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotDistribution.CheckFrequency", 60);
+    g_BotDistDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.DebugMode", false);
+    g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFrequency", 60);
 
-    g_LevelRanges[0] = { 1, 10,  static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range1Pct", 14)) };
-    g_LevelRanges[1] = { 11, 20, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range2Pct", 12)) };
-    g_LevelRanges[2] = { 21, 30, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range3Pct", 12)) };
-    g_LevelRanges[3] = { 31, 40, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range4Pct", 12)) };
-    g_LevelRanges[4] = { 41, 50, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range5Pct", 12)) };
-    g_LevelRanges[5] = { 51, 60, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range6Pct", 12)) };
-    g_LevelRanges[6] = { 61, 70, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range7Pct", 12)) };
-    g_LevelRanges[7] = { 71, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotDistribution.Range8Pct", 14)) };
+    g_LevelRanges[0] = { 1, 10,  static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range1Pct", 14)) };
+    g_LevelRanges[1] = { 11, 20, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range2Pct", 12)) };
+    g_LevelRanges[2] = { 21, 30, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range3Pct", 12)) };
+    g_LevelRanges[3] = { 31, 40, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range4Pct", 12)) };
+    g_LevelRanges[4] = { 41, 50, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range5Pct", 12)) };
+    g_LevelRanges[5] = { 51, 60, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range6Pct", 12)) };
+    g_LevelRanges[6] = { 61, 70, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range7Pct", 12)) };
+    g_LevelRanges[7] = { 71, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range8Pct", 14)) };
 
     uint32 totalPercent = 0;
     for (uint8 i = 0; i < NUM_RANGES; ++i)
@@ -166,7 +166,7 @@ public:
     // On server startup, load the configuration and log the settings (if debug mode is enabled).
     void OnStartup() override
     {
-        LoadBotDistributionConfig();
+        LoadBotLevelBracketsConfig();
         if (g_BotDistDebugMode)
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Module loaded. Check frequency: {} seconds.", g_BotDistCheckFrequency);

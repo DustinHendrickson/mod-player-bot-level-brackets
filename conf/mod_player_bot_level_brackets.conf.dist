@@ -1,11 +1,11 @@
 [worldserver]
 
-########################################
-# mod-bot-level-distribution configuration
-########################################
+##############################################
+# mod-player-bot-level-brackets configuration
+##############################################
 #
 #    BotDistribution.DebugMode
-#        Description: Enables debug logging for the Bot Level Distribution module.
+#        Description: Enables debug logging for the Bot Level Brackets module.
 #        Default:     0 (disabled)
 #                     Valid values: 0 (off) / 1 (on)
 BotDistribution.DebugMode = 0
