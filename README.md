@@ -46,7 +46,7 @@ Installation
    Ensure the AzerothCore Playerbots fork is installed and running. Clone the module into your AzerothCore modules directory:
    
        cd /path/to/azerothcore/modules
-       git clone https://github.com/DustinHendrickson/mod-bot-level-brackets.git
+       git clone https://github.com/DustinHendrickson/mod-player-bot-level-brackets.git
 
 2. **Recompile AzerothCore**  
    Rebuild the project with the new module:
@@ -59,7 +59,7 @@ Installation
 3. **Configure the Module**  
    Rename the configuration file:
    
-       mv /path/to/azerothcore/modules/mod-bot-level-brackets.conf.dist /path/to/azerothcore/modules/mod-bot-level-brackets.conf
+       mv /path/to/azerothcore/modules/mod_player_bot_level_brackets.conf.dist /path/to/azerothcore/modules/mod_player_bot_level_brackets.conf
 
 4. **Restart the Server**  
    Launch the world server:
@@ -68,7 +68,7 @@ Installation
 
 Configuration Options
 ---------------------
-Customize the module’s behavior by editing the `mod-bot-level-brackets.conf` file:
+Customize the module’s behavior by editing the `mod_player_bot_level_brackets.conf` file:
 
 Setting                          | Description                                                                                                    | Default | Valid Values
 -------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------- | --------------------
