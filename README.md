@@ -7,25 +7,37 @@ The Bot Level Brackets module for AzerothCore ensures an even spread of player b
 
 Features
 --------
-•  **Configurable Level Brackets:**  
-   Define eight distinct level brackets with customizable lower and upper bounds.
+• **Configurable Level Brackets:**  
+   Define nine distinct level brackets with customizable lower and upper bounds:
+   - 1-9  
+   - 10-19  
+   - 20-29  
+   - 30-39  
+   - 40-49  
+   - 50-59  
+   - 60-69  
+   - 70-79  
+   - 80
 
-•  **Desired Percentage Distribution:**  
+• **Desired Percentage Distribution:**  
    Set target percentages for the number of bots within each level bracket.
 
-•  **Dynamic Bot Adjustment:**  
+• **Dynamic Bot Adjustment:**  
    Automatically reassign bots from brackets with a surplus to those with a deficit.
 
-•  **Auto Maintenance Execution:**  
+• **Death Knight Level Safeguard:**  
+   Ensures that bots of the Death Knight class are never assigned a level below 55, guaranteeing they only appear in higher brackets.
+
+• **Auto Maintenance Execution:**  
    Executes the AutoMaintenanceOnLevelupAction after adjusting a bot’s level to ensure proper reinitialization.
 
-•  **Equipment and Pet Reset:**  
+• **Equipment and Pet Reset:**  
    Destroys all equipped items and removes any pet during a level adjustment.
 
-•  **Support for Random Bots:**  
+• **Support for Random Bots:**  
    Applies exclusively to bots managed by RandomPlayerbotMgr.
 
-•  **Debug Mode:**  
+• **Debug Mode:**  
    Provides detailed logging to aid in monitoring and troubleshooting module operations.
 
 Installation
@@ -60,16 +72,17 @@ Customize the module’s behavior by editing the `mod-bot-level-brackets.conf` f
 
 Setting                          | Description                                                                                                    | Default | Valid Values
 -------------------------------- | -------------------------------------------------------------------------------------------------------------- | ------- | --------------------
-BotLevelBrackets.DebugMode        | Enables detailed debug logging for module operations.                                                        | 0       | 0 (off) / 1 (on)
-BotLevelBrackets.CheckFrequency   | Frequency (in seconds) for performing the bot bracket distribution check.                                      | 300     | Positive Integer
-BotLevelBrackets.Range1Pct        | Desired percentage of bots in level bracket 1-10.                                                              | 14      | 0-100
-BotLevelBrackets.Range2Pct        | Desired percentage of bots in level bracket 11-20.                                                             | 12      | 0-100
-BotLevelBrackets.Range3Pct        | Desired percentage of bots in level bracket 21-30.                                                             | 12      | 0-100
-BotLevelBrackets.Range4Pct        | Desired percentage of bots in level bracket 31-40.                                                             | 12      | 0-100
-BotLevelBrackets.Range5Pct        | Desired percentage of bots in level bracket 41-50.                                                             | 12      | 0-100
-BotLevelBrackets.Range6Pct        | Desired percentage of bots in level bracket 51-60.                                                             | 12      | 0-100
-BotLevelBrackets.Range7Pct        | Desired percentage of bots in level bracket 61-70.                                                             | 12      | 0-100
-BotLevelBrackets.Range8Pct        | Desired percentage of bots in level bracket 71-80.                                                             | 14      | 0-100
+BotLevelBrackets.DebugMode       | Enables detailed debug logging for module operations.                                                        | 0       | 0 (off) / 1 (on)
+BotLevelBrackets.CheckFrequency  | Frequency (in seconds) for performing the bot bracket distribution check.                                      | 300     | Positive Integer
+BotLevelBrackets.Range1Pct       | Desired percentage of bots in level bracket 1-9.                                                               | 11      | 0-100
+BotLevelBrackets.Range2Pct       | Desired percentage of bots in level bracket 10-19.                                                             | 11      | 0-100
+BotLevelBrackets.Range3Pct       | Desired percentage of bots in level bracket 20-29.                                                             | 11      | 0-100
+BotLevelBrackets.Range4Pct       | Desired percentage of bots in level bracket 30-39.                                                             | 11      | 0-100
+BotLevelBrackets.Range5Pct       | Desired percentage of bots in level bracket 40-49.                                                             | 11      | 0-100
+BotLevelBrackets.Range6Pct       | Desired percentage of bots in level bracket 50-59.                                                             | 11      | 0-100
+BotLevelBrackets.Range7Pct       | Desired percentage of bots in level bracket 60-69.                                                             | 11      | 0-100
+BotLevelBrackets.Range8Pct       | Desired percentage of bots in level bracket 70-79.                                                             | 11      | 0-100
+BotLevelBrackets.Range9Pct       | Desired percentage of bots in level bracket 80.                                                                | 12      | 0-100
 
 *Note: The sum of all bracket percentages must equal 100.*
 
@@ -88,4 +101,5 @@ This module is released under the GNU GPL v2 license, consistent with AzerothCor
 Contribution
 ------------
 Created by Dustin Hendrickson.
+
 Pull requests and issues are welcome. Please ensure that contributions adhere to AzerothCore's coding standards.

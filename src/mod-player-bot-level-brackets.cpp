@@ -22,7 +22,7 @@ struct LevelRangeConfig
     uint8 desiredPercent;///< Desired percentage of bots in this range
 };
 
-static const uint8 NUM_RANGES = 8;
+static const uint8 NUM_RANGES = 9;
 static LevelRangeConfig g_LevelRanges[NUM_RANGES];
 
 static uint32 g_BotDistCheckFrequency = 300; // in seconds
@@ -30,14 +30,15 @@ static bool   g_BotDistDebugMode      = false;
 
 // Loads the configuration from the config file.
 // Expected keys (with example default percentages):
-//   BotLevelBrackets.Range1Pct = 14
-//   BotLevelBrackets.Range2Pct = 12
-//   BotLevelBrackets.Range3Pct = 12
-//   BotLevelBrackets.Range4Pct = 12
-//   BotLevelBrackets.Range5Pct = 12
-//   BotLevelBrackets.Range6Pct = 12
-//   BotLevelBrackets.Range7Pct = 12
-//   BotLevelBrackets.Range8Pct = 14
+//   BotLevelBrackets.Range1Pct = 11
+//   BotLevelBrackets.Range2Pct = 11
+//   BotLevelBrackets.Range3Pct = 11
+//   BotLevelBrackets.Range4Pct = 11
+//   BotLevelBrackets.Range5Pct = 11
+//   BotLevelBrackets.Range6Pct = 11
+//   BotLevelBrackets.Range7Pct = 11
+//   BotLevelBrackets.Range8Pct = 11
+//   BotLevelBrackets.Range9Pct = 12
 // Additionally:
 //   BotLevelBrackets.CheckFrequency (in seconds)
 //   BotLevelBrackets.DebugMode (true/false)
@@ -46,14 +47,15 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.DebugMode", false);
     g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFrequency", 60);
 
-    g_LevelRanges[0] = { 1, 10,  static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range1Pct", 14)) };
-    g_LevelRanges[1] = { 11, 20, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range2Pct", 12)) };
-    g_LevelRanges[2] = { 21, 30, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range3Pct", 12)) };
-    g_LevelRanges[3] = { 31, 40, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range4Pct", 12)) };
-    g_LevelRanges[4] = { 41, 50, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range5Pct", 12)) };
-    g_LevelRanges[5] = { 51, 60, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range6Pct", 12)) };
-    g_LevelRanges[6] = { 61, 70, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range7Pct", 12)) };
-    g_LevelRanges[7] = { 71, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range8Pct", 14)) };
+    g_LevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range1Pct", 11)) };
+    g_LevelRanges[1] = { 10, 19, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range2Pct", 11)) };
+    g_LevelRanges[2] = { 20, 29, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range3Pct", 11)) };
+    g_LevelRanges[3] = { 30, 39, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range4Pct", 11)) };
+    g_LevelRanges[4] = { 40, 49, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range5Pct", 11)) };
+    g_LevelRanges[5] = { 50, 59, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range6Pct", 11)) };
+    g_LevelRanges[6] = { 60, 69, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range7Pct", 11)) };
+    g_LevelRanges[7] = { 70, 79, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range8Pct", 11)) };
+    g_LevelRanges[8] = { 80, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Range9Pct", 12)) };
 
     uint32 totalPercent = 0;
     for (uint8 i = 0; i < NUM_RANGES; ++i)
@@ -81,6 +83,7 @@ static uint8 GetRandomLevelInRange(const LevelRangeConfig& range)
 }
 
 // Adjusts a bot's level by selecting a random level within the target range.
+// For Death Knight bots, the new level will not be set below 55.
 // In addition to setting the new level and resetting XP, this function:
 //   - Sends a system message indicating the reset.
 //   - Destroys all equipped items.
@@ -91,11 +94,36 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex)
     if (!bot || targetRangeIndex < 0 || targetRangeIndex >= NUM_RANGES)
         return;
 
-    uint8 newLevel = GetRandomLevelInRange(g_LevelRanges[targetRangeIndex]);
+    uint8 newLevel = 0;
+    // If the bot is a Death Knight, ensure level is not set below 55.
+    if (bot->getClass() == CLASS_DEATH_KNIGHT)
+    {
+        uint8 lowerBound = g_LevelRanges[targetRangeIndex].lower;
+        uint8 upperBound = g_LevelRanges[targetRangeIndex].upper;
+        if (upperBound < 55)
+        {
+            // This target range is invalid for Death Knights.
+            if (g_BotDistDebugMode)
+            {
+                LOG_INFO("server.loading", "[BotLevelBrackets] AdjustBotToRange: Cannot assign Death Knight '{}' to range {}-{} (below level 55).",
+                         bot->GetName(), lowerBound, upperBound);
+            }
+            return;
+        }
+        // Adjust lower bound to 55 if necessary.
+        if (lowerBound < 55)
+            lowerBound = 55;
+        newLevel = urand(lowerBound, upperBound);
+    }
+    else
+    {
+        newLevel = GetRandomLevelInRange(g_LevelRanges[targetRangeIndex]);
+    }
+
     bot->SetLevel(newLevel);
     bot->SetUInt32Value(PLAYER_XP, 0);
 
-    // Inform the bot (or player) about the level reset.
+    // Inform the bot about the level reset.
     ChatHandler(bot->GetSession()).SendSysMessage("[mod-bot-level-brackets] Your level has been reset.");
 
     // Destroy equipped items.
@@ -236,26 +264,38 @@ public:
         {
             while (actualCounts[i] > desiredCounts[i] && !botsByRange[i].empty())
             {
-                // Locate a target range with a deficit.
-                int targetRange = -1;
-                for (int j = 0; j < NUM_RANGES; ++j)
-                {
-                    if (actualCounts[j] < desiredCounts[j])
-                    {
-                        targetRange = j;
-                        break;
-                    }
-                }
-                if (targetRange == -1)
-                    break; // No underpopulated range found.
-
-                // Retrieve one bot from the current (overpopulated) range.
                 Player* bot = botsByRange[i].back();
                 botsByRange[i].pop_back();
 
-                // Adjust its level to a random level within the target range and perform cleanup.
-                AdjustBotToRange(bot, targetRange);
+                int targetRange = -1;
+                // For Death Knights, only consider target ranges where the upper bound is at least 55.
+                if (bot->getClass() == CLASS_DEATH_KNIGHT)
+                {
+                    for (int j = 0; j < NUM_RANGES; ++j)
+                    {
+                        if (actualCounts[j] < desiredCounts[j] && g_LevelRanges[j].upper >= 55)
+                        {
+                            targetRange = j;
+                            break;
+                        }
+                    }
+                }
+                else
+                {
+                    for (int j = 0; j < NUM_RANGES; ++j)
+                    {
+                        if (actualCounts[j] < desiredCounts[j])
+                        {
+                            targetRange = j;
+                            break;
+                        }
+                    }
+                }
 
+                if (targetRange == -1)
+                    break; // No appropriate underpopulated range found.
+
+                AdjustBotToRange(bot, targetRange);
                 actualCounts[i]--;
                 actualCounts[targetRange]++;
             }
