@@ -15,47 +15,100 @@ BotLevelBrackets.DebugMode = 0
 #        Default:     300
 BotLevelBrackets.CheckFrequency = 300
 
-#    BotLevelBrackets.Range1Pct
-#        Description: Desired percentage of bots within level range 1-9.
+#
+#    Alliance Level Brackets Configuration
+#    The percentages below must sum to 100.
+#
+#    BotLevelBrackets.Alliance.Range1Pct
+#        Description: Desired percentage of Alliance bots within level range 1-9.
 #        Default:     11
-BotLevelBrackets.Range1Pct = 11
+BotLevelBrackets.Alliance.Range1Pct = 11
 
-#    BotLevelBrackets.Range2Pct
-#        Description: Desired percentage of bots within level range 10-19.
+#    BotLevelBrackets.Alliance.Range2Pct
+#        Description: Desired percentage of Alliance bots within level range 10-19.
 #        Default:     11
-BotLevelBrackets.Range2Pct = 11
+BotLevelBrackets.Alliance.Range2Pct = 11
 
-#    BotLevelBrackets.Range3Pct
-#        Description: Desired percentage of bots within level range 20-29.
+#    BotLevelBrackets.Alliance.Range3Pct
+#        Description: Desired percentage of Alliance bots within level range 20-29.
 #        Default:     11
-BotLevelBrackets.Range3Pct = 11
+BotLevelBrackets.Alliance.Range3Pct = 11
 
-#    BotLevelBrackets.Range4Pct
-#        Description: Desired percentage of bots within level range 30-39.
+#    BotLevelBrackets.Alliance.Range4Pct
+#        Description: Desired percentage of Alliance bots within level range 30-39.
 #        Default:     11
-BotLevelBrackets.Range4Pct = 11
+BotLevelBrackets.Alliance.Range4Pct = 11
 
-#    BotLevelBrackets.Range5Pct
-#        Description: Desired percentage of bots within level range 40-49.
+#    BotLevelBrackets.Alliance.Range5Pct
+#        Description: Desired percentage of Alliance bots within level range 40-49.
 #        Default:     11
-BotLevelBrackets.Range5Pct = 11
+BotLevelBrackets.Alliance.Range5Pct = 11
 
-#    BotLevelBrackets.Range6Pct
-#        Description: Desired percentage of bots within level range 50-59.
+#    BotLevelBrackets.Alliance.Range6Pct
+#        Description: Desired percentage of Alliance bots within level range 50-59.
 #        Default:     11
-BotLevelBrackets.Range6Pct = 11
+BotLevelBrackets.Alliance.Range6Pct = 11
 
-#    BotLevelBrackets.Range7Pct
-#        Description: Desired percentage of bots within level range 60-69.
+#    BotLevelBrackets.Alliance.Range7Pct
+#        Description: Desired percentage of Alliance bots within level range 60-69.
 #        Default:     11
-BotLevelBrackets.Range7Pct = 11
+BotLevelBrackets.Alliance.Range7Pct = 11
 
-#    BotLevelBrackets.Range8Pct
-#        Description: Desired percentage of bots within level range 70-79.
+#    BotLevelBrackets.Alliance.Range8Pct
+#        Description: Desired percentage of Alliance bots within level range 70-79.
 #        Default:     11
-BotLevelBrackets.Range8Pct = 11
+BotLevelBrackets.Alliance.Range8Pct = 11
 
-#    BotLevelBrackets.Range9Pct
-#        Description: Desired percentage of bots within level range 80.
+#    BotLevelBrackets.Alliance.Range9Pct
+#        Description: Desired percentage of Alliance bots within level range 80.
 #        Default:     12
-BotLevelBrackets.Range9Pct = 12
+BotLevelBrackets.Alliance.Range9Pct = 12
+
+#
+#    Horde Level Brackets Configuration
+#    The percentages below must sum to 100.
+#
+#    BotLevelBrackets.Horde.Range1Pct
+#        Description: Desired percentage of Horde bots within level range 1-9.
+#        Default:     11
+BotLevelBrackets.Horde.Range1Pct = 11
+
+#    BotLevelBrackets.Horde.Range2Pct
+#        Description: Desired percentage of Horde bots within level range 10-19.
+#        Default:     11
+BotLevelBrackets.Horde.Range2Pct = 11
+
+#    BotLevelBrackets.Horde.Range3Pct
+#        Description: Desired percentage of Horde bots within level range 20-29.
+#        Default:     11
+BotLevelBrackets.Horde.Range3Pct = 11
+
+#    BotLevelBrackets.Horde.Range4Pct
+#        Description: Desired percentage of Horde bots within level range 30-39.
+#        Default:     11
+BotLevelBrackets.Horde.Range4Pct = 11
+
+#    BotLevelBrackets.Horde.Range5Pct
+#        Description: Desired percentage of Horde bots within level range 40-49.
+#        Default:     11
+BotLevelBrackets.Horde.Range5Pct = 11
+
+#    BotLevelBrackets.Horde.Range6Pct
+#        Description: Desired percentage of Horde bots within level range 50-59.
+#        Default:     11
+BotLevelBrackets.Horde.Range6Pct = 11
+
+#    BotLevelBrackets.Horde.Range7Pct
+#        Description: Desired percentage of Horde bots within level range 60-69.
+#        Default:     11
+BotLevelBrackets.Horde.Range7Pct = 11
+
+#    BotLevelBrackets.Horde.Range8Pct
+#        Description: Desired percentage of Horde bots within level range 70-79.
+#        Default:     11
+BotLevelBrackets.Horde.Range8Pct = 11
+
+#    BotLevelBrackets.Horde.Range9Pct
+#        Description: Desired percentage of Horde bots within level range 80.
+#        Default:     12
+BotLevelBrackets.Horde.Range9Pct = 12
