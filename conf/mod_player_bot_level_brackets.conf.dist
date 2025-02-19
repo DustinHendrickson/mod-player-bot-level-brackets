@@ -15,14 +15,19 @@ BotLevelBrackets.DebugMode = 0
 #        Default:     300
 BotLevelBrackets.CheckFrequency = 300
 
+#    BotLevelBrackets.CheckFlaggedFrequency
+#        Description: The frequency (in seconds) at which the bot level reset is performed for flagged bots that failed safety checks initially.
+#        Default:     15
+BotLevelBrackets.CheckFlaggedFrequency = 15
+
 #
 #    Alliance Level Brackets Configuration
 #    The percentages below must sum to 100.
 #
 #    BotLevelBrackets.Alliance.Range1Pct
 #        Description: Desired percentage of Alliance bots within level range 1-9.
-#        Default:     11
-BotLevelBrackets.Alliance.Range1Pct = 11
+#        Default:     12
+BotLevelBrackets.Alliance.Range1Pct = 12
 
 #    BotLevelBrackets.Alliance.Range2Pct
 #        Description: Desired percentage of Alliance bots within level range 10-19.
@@ -61,8 +66,8 @@ BotLevelBrackets.Alliance.Range8Pct = 11
 
 #    BotLevelBrackets.Alliance.Range9Pct
 #        Description: Desired percentage of Alliance bots within level range 80.
-#        Default:     12
-BotLevelBrackets.Alliance.Range9Pct = 12
+#        Default:     11
+BotLevelBrackets.Alliance.Range9Pct = 11
 
 #
 #    Horde Level Brackets Configuration
@@ -70,8 +75,8 @@ BotLevelBrackets.Alliance.Range9Pct = 12
 #
 #    BotLevelBrackets.Horde.Range1Pct
 #        Description: Desired percentage of Horde bots within level range 1-9.
-#        Default:     11
-BotLevelBrackets.Horde.Range1Pct = 11
+#        Default:     12
+BotLevelBrackets.Horde.Range1Pct = 12
 
 #    BotLevelBrackets.Horde.Range2Pct
 #        Description: Desired percentage of Horde bots within level range 10-19.
@@ -110,5 +115,5 @@ BotLevelBrackets.Horde.Range8Pct = 11
 
 #    BotLevelBrackets.Horde.Range9Pct
 #        Description: Desired percentage of Horde bots within level range 80.
-#        Default:     12
-BotLevelBrackets.Horde.Range9Pct = 12
+#        Default:     11
+BotLevelBrackets.Horde.Range9Pct = 11

@@ -77,13 +77,15 @@ Setting                         | Description                                   
 --------------------------------|----------------------------------------------------------------------------------------------|---------|--------------------
 BotLevelBrackets.DebugMode      | Enables detailed debug logging for module operations.                                        | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.CheckFrequency | Frequency (in seconds) for performing the bot bracket distribution check.                    | 300     | Positive Integer
+BotLevelBrackets.CheckFlaggedFrequency | Frequency (in seconds) at which the bot level reset is performed for flagged bots that failed safety checks initially.               | 15     | Positive Integer
+
 
 ### Alliance Level Brackets Configuration
 *The percentages below must sum to 100.*
 
 Setting                                    | Description                                                  | Default | Valid Values
 -------------------------------------------|--------------------------------------------------------------|---------|--------------------
-BotLevelBrackets.Alliance.Range1Pct         | Desired percentage of Alliance bots within level range 1-9.   | 11      | 0-100
+BotLevelBrackets.Alliance.Range1Pct         | Desired percentage of Alliance bots within level range 1-9.   | 12      | 0-100
 BotLevelBrackets.Alliance.Range2Pct         | Desired percentage of Alliance bots within level range 10-19. | 11      | 0-100
 BotLevelBrackets.Alliance.Range3Pct         | Desired percentage of Alliance bots within level range 20-29. | 11      | 0-100
 BotLevelBrackets.Alliance.Range4Pct         | Desired percentage of Alliance bots within level range 30-39. | 11      | 0-100
@@ -91,14 +93,14 @@ BotLevelBrackets.Alliance.Range5Pct         | Desired percentage of Alliance bot
 BotLevelBrackets.Alliance.Range6Pct         | Desired percentage of Alliance bots within level range 50-59. | 11      | 0-100
 BotLevelBrackets.Alliance.Range7Pct         | Desired percentage of Alliance bots within level range 60-69. | 11      | 0-100
 BotLevelBrackets.Alliance.Range8Pct         | Desired percentage of Alliance bots within level range 70-79. | 11      | 0-100
-BotLevelBrackets.Alliance.Range9Pct         | Desired percentage of Alliance bots at level 80.              | 12      | 0-100
+BotLevelBrackets.Alliance.Range9Pct         | Desired percentage of Alliance bots at level 80.              | 11      | 0-100
 
 ### Horde Level Brackets Configuration
 *The percentages below must sum to 100.*
 
 Setting                                | Description                                               | Default | Valid Values
 ---------------------------------------|-----------------------------------------------------------|---------|--------------------
-BotLevelBrackets.Horde.Range1Pct         | Desired percentage of Horde bots within level range 1-9.  | 11      | 0-100
+BotLevelBrackets.Horde.Range1Pct         | Desired percentage of Horde bots within level range 1-9.  | 12      | 0-100
 BotLevelBrackets.Horde.Range2Pct         | Desired percentage of Horde bots within level range 10-19.| 11      | 0-100
 BotLevelBrackets.Horde.Range3Pct         | Desired percentage of Horde bots within level range 20-29.| 11      | 0-100
 BotLevelBrackets.Horde.Range4Pct         | Desired percentage of Horde bots within level range 30-39.| 11      | 0-100
@@ -106,7 +108,7 @@ BotLevelBrackets.Horde.Range5Pct         | Desired percentage of Horde bots with
 BotLevelBrackets.Horde.Range6Pct         | Desired percentage of Horde bots within level range 50-59.| 11      | 0-100
 BotLevelBrackets.Horde.Range7Pct         | Desired percentage of Horde bots within level range 60-69.| 11      | 0-100
 BotLevelBrackets.Horde.Range8Pct         | Desired percentage of Horde bots within level range 70-79.| 11      | 0-100
-BotLevelBrackets.Horde.Range9Pct         | Desired percentage of Horde bots at level 80.             | 12      | 0-100
+BotLevelBrackets.Horde.Range9Pct         | Desired percentage of Horde bots at level 80.             | 11      | 0-100
 
 Debugging
 ---------

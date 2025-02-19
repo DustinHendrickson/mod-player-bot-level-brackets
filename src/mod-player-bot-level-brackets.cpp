@@ -52,7 +52,7 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
 
     // Alliance configuration.
-    g_AllianceLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range1Pct", 11)) };
+    g_AllianceLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range1Pct", 12)) };
     g_AllianceLevelRanges[1] = { 10, 19, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range2Pct", 11)) };
     g_AllianceLevelRanges[2] = { 20, 29, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range3Pct", 11)) };
     g_AllianceLevelRanges[3] = { 30, 39, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range4Pct", 11)) };
@@ -60,10 +60,10 @@ static void LoadBotLevelBracketsConfig()
     g_AllianceLevelRanges[5] = { 50, 59, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range6Pct", 11)) };
     g_AllianceLevelRanges[6] = { 60, 69, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range7Pct", 11)) };
     g_AllianceLevelRanges[7] = { 70, 79, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range8Pct", 11)) };
-    g_AllianceLevelRanges[8] = { 80, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range9Pct", 12)) };
+    g_AllianceLevelRanges[8] = { 80, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range9Pct", 11)) };
 
     // Horde configuration.
-    g_HordeLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range1Pct", 11)) };
+    g_HordeLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range1Pct", 12)) };
     g_HordeLevelRanges[1] = { 10, 19, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range2Pct", 11)) };
     g_HordeLevelRanges[2] = { 20, 29, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range3Pct", 11)) };
     g_HordeLevelRanges[3] = { 30, 39, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range4Pct", 11)) };
@@ -71,7 +71,7 @@ static void LoadBotLevelBracketsConfig()
     g_HordeLevelRanges[5] = { 50, 59, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range6Pct", 11)) };
     g_HordeLevelRanges[6] = { 60, 69, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range7Pct", 11)) };
     g_HordeLevelRanges[7] = { 70, 79, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range8Pct", 11)) };
-    g_HordeLevelRanges[8] = { 80, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range9Pct", 12)) };
+    g_HordeLevelRanges[8] = { 80, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range9Pct", 11)) };
 
     uint32 totalAlliancePercent = 0;
     uint32 totalHordePercent = 0;
