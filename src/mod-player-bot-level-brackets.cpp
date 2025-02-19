@@ -13,9 +13,6 @@
 #include <cmath>
 #include <utility>
 #include "PlayerbotFactory.h"
-#include <thread>
-#include <mutex>
-#include <chrono>
 
 void RemoveAllEquippedItems(Player* bot);
 void RemoveAllTradeSkills(Player* bot);
@@ -25,9 +22,6 @@ void RemoveAllActiveAuras(Player* bot);
 
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
-
-static std::mutex g_ResetMutex;
-static bool g_RunningResetThread = true;
 
 // -----------------------------------------------------------------------------
 // LEVEL RANGE CONFIGURATION
@@ -47,6 +41,7 @@ static LevelRangeConfig g_AllianceLevelRanges[NUM_RANGES];
 static LevelRangeConfig g_HordeLevelRanges[NUM_RANGES];
 
 static uint32 g_BotDistCheckFrequency = 300; // in seconds
+static uint32 g_BotDistFlaggedCheckFrequency = 15; // in seconds
 static bool   g_BotDistDebugMode      = false;
 
 // Loads the configuration from the config file.
@@ -54,6 +49,7 @@ static void LoadBotLevelBracketsConfig()
 {
     g_BotDistDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.DebugMode", false);
     g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFrequency", 300);
+    g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
 
     // Alliance configuration.
     g_AllianceLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range1Pct", 11)) };
@@ -321,25 +317,19 @@ struct PendingResetEntry
 };
 static std::vector<PendingResetEntry> g_PendingLevelResets;
 
-static void ProcessPendingLevelResetsAsync()
+static void ProcessPendingLevelResets()
 {
-    while (g_RunningResetThread)
+    for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end(); )
     {
-        std::this_thread::sleep_for(std::chrono::seconds(30)); // Run every 30 seconds
-
-        std::lock_guard<std::mutex> lock(g_ResetMutex);
-        for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end(); )
+        Player* bot = it->bot;
+        int targetRange = it->targetRange;
+        if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
         {
-            Player* bot = it->bot;
-            int targetRange = it->targetRange;
-            if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
-            {
-                AdjustBotToRange(bot, targetRange, it->factionRanges);
-                it = g_PendingLevelResets.erase(it);
-            }
-            else
-                ++it;
+            AdjustBotToRange(bot, targetRange, it->factionRanges);
+            it = g_PendingLevelResets.erase(it);
         }
+        else
+            ++it;
     }
 }
 
@@ -349,14 +339,14 @@ static void ProcessPendingLevelResetsAsync()
 class BotLevelBracketsWorldScript : public WorldScript
 {
 public:
-    BotLevelBracketsWorldScript() : WorldScript("BotLevelBracketsWorldScript"), m_timer(0) { }
+    BotLevelBracketsWorldScript() : WorldScript("BotLevelBracketsWorldScript"), m_timer(0), m_flaggedTimer(0) { }
 
     void OnStartup() override
     {
         LoadBotLevelBracketsConfig();
         if (g_BotDistDebugMode)
         {
-            LOG_INFO("server.loading", "[BotLevelBrackets] Module loaded. Check frequency: {} seconds.", g_BotDistCheckFrequency);
+            LOG_INFO("server.loading", "[BotLevelBrackets] Module loaded. Check frequency: {} seconds, Check flagged frequency: {}.", g_BotDistCheckFrequency, g_BotDistFlaggedCheckFrequency);
             for (uint8 i = 0; i < NUM_RANGES; ++i)
             {
                 LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {}: {}-{}, Desired Percentage: {}%",
@@ -365,19 +355,21 @@ public:
                          i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper, g_HordeLevelRanges[i].desiredPercent);
             }
         }
-
-        // Start background thread for pending level resets
-    	std::thread(ProcessPendingLevelResetsAsync).detach();
     }
-
-    void OnShutdown() override
-	{
-	    g_RunningResetThread = false;
-	}
 
     void OnUpdate(uint32 diff) override
     {
         m_timer += diff;
+		m_flaggedTimer += diff;
+
+		// Check if it's time to process pending level resets
+		if (m_flaggedTimer >= g_BotDistFlaggedCheckFrequency * 1000)
+		{
+		    ProcessPendingLevelResets();
+		    m_flaggedTimer = 0;
+		}
+
+		// Continue with distribution adjustments once its timer expires
         if (m_timer < g_BotDistCheckFrequency * 1000)
             return;
         m_timer = 0;
@@ -662,7 +654,8 @@ public:
     }
 
 private:
-    uint32 m_timer;
+    uint32 m_timer;         // For distribution adjustments
+    uint32 m_flaggedTimer;  // For pending reset checks
 };
 
 // -----------------------------------------------------------------------------
