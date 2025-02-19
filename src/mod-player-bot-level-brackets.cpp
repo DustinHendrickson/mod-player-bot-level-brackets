@@ -14,12 +14,6 @@
 #include <utility>
 #include "PlayerbotFactory.h"
 
-void RemoveAllEquippedItems(Player* bot);
-void RemoveAllTradeSkills(Player* bot);
-void RemoveAllLearnedSpells(Player* bot);
-void RemoveAllQuests(Player* bot);
-void RemoveAllActiveAuras(Player* bot);
-
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
 
@@ -113,23 +107,14 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
     if (!bot || targetRangeIndex < 0 || targetRangeIndex >= NUM_RANGES)
         return;
 
-    PlayerbotFactory factory(bot, bot->GetLevel());
-
     if (bot->IsMounted())
+    {
         bot->Dismount();
-
-    bot->resetTalents(true);
-    RemoveAllEquippedItems(bot);
-    RemoveAllTradeSkills(bot);
-    RemoveAllLearnedSpells(bot);
-    RemoveAllQuests(bot);
-    RemoveAllActiveAuras(bot);
-
-    if (bot->GetPet())
-        bot->RemovePet(bot->GetPet(), PET_SAVE_NOT_IN_SLOT, false);
+    }
 
     uint8 botOriginalLevel = bot->GetLevel();
     uint8 newLevel = 0;
+
     // For Death Knight bots, enforce a minimum level of 55.
     if (bot->getClass() == CLASS_DEATH_KNIGHT)
     {
@@ -155,9 +140,9 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
         newLevel = GetRandomLevelInRange(factionRanges[targetRangeIndex]);
     }
 
-    bot->SetLevel(newLevel);
-    bot->SetUInt32Value(PLAYER_XP, 0);
-    ChatHandler(bot->GetSession()).SendSysMessage("[mod-bot-level-brackets] Your level has been reset.");
+    PlayerbotFactory newFactory(bot, newLevel);
+
+    newFactory.Randomize(false);
 
     if (g_BotDistDebugMode)
     {
@@ -170,81 +155,8 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
                  factionRanges[targetRangeIndex].lower, factionRanges[targetRangeIndex].upper);
     }
 
-    bot->InitStatsForLevel();
+    ChatHandler(bot->GetSession()).SendSysMessage("[mod-bot-level-brackets] Your level has been reset.");
 
-    PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(bot);
-    if (botAI)
-    {
-        AutoMaintenanceOnLevelupAction maintenanceAction(botAI);
-        maintenanceAction.Execute(Event());
-        if (g_BotDistDebugMode)
-            LOG_INFO("server.loading",
-                     "[BotLevelBrackets] AdjustBotToRange: AutoMaintenanceOnLevelupAction executed for bot '{}'.", bot->GetName());
-    }
-    else
-    {
-        LOG_ERROR("server.loading",
-                  "[BotLevelBrackets] AdjustBotToRange: Failed to retrieve PlayerbotAI for bot '{}'.", bot->GetName());
-    }
-}
-
-// -----------------------------------------------------------------------------
-// BOT INTERFACE HELPERS
-// -----------------------------------------------------------------------------
-void RemoveAllLearnedSpells(Player* bot)
-{
-    bot->RemoveAllSpellCooldown();
-
-    std::vector<uint32> spellsToRemove;
-    for (const auto& spellPair : bot->GetSpellMap())
-    {
-        const uint32 spellId = spellPair.first;
-        const PlayerSpellState state = spellPair.second->State;
-        if (state != PLAYERSPELL_REMOVED)
-            spellsToRemove.push_back(spellId);
-    }
-    for (uint32 spellId : spellsToRemove)
-        bot->removeSpell(spellId, SPEC_MASK_ALL, false);
-}
-
-void RemoveAllQuests(Player* bot)
-{
-    for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
-    {
-        uint32 questId = bot->GetQuestSlotQuestId(slot);
-        if (questId)
-            bot->SetQuestSlot(slot, 0);
-    }
-    CharacterDatabase.Execute("DELETE FROM character_queststatus WHERE guid = {}", bot->GetGUID().GetCounter());
-}
-
-void RemoveAllActiveAuras(Player* bot)
-{
-    bot->RemoveAllAuras();
-}
-
-void RemoveAllEquippedItems(Player* bot)
-{
-    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-    {
-        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
-    }
-}
-
-void RemoveAllTradeSkills(Player* bot)
-{
-    static const uint32 tradeSkills[] = {
-        SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_COOKING, SKILL_ENCHANTING,
-        SKILL_ENGINEERING, SKILL_FIRST_AID, SKILL_FISHING, SKILL_HERBALISM,
-        SKILL_JEWELCRAFTING, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING,
-        SKILL_TAILORING
-    };
-    for (auto skill : tradeSkills)
-    {
-        if (bot->HasSkill(skill))
-            bot->SetSkill(skill, 0, 0, 0);
-    }
 }
 
 // -----------------------------------------------------------------------------
