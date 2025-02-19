@@ -14,10 +14,6 @@
 #include <utility>
 #include "PlayerbotFactory.h"
 
-void RemoveAllEquippedItems(Player* bot);
-void RemoveAllTradeSkills(Player* bot);
-void RemoveAllQuests(Player* bot);
-
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
 
@@ -161,45 +157,6 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
 
     ChatHandler(bot->GetSession()).SendSysMessage("[mod-bot-level-brackets] Your level has been reset.");
 
-}
-
-// -----------------------------------------------------------------------------
-// BOT INTERFACE HELPERS
-// -----------------------------------------------------------------------------
-
-void RemoveAllQuests(Player* bot)
-{
-    for (uint8 slot = 0; slot < MAX_QUEST_LOG_SIZE; ++slot)
-    {
-        uint32 questId = bot->GetQuestSlotQuestId(slot);
-        if (questId)
-            bot->SetQuestSlot(slot, 0);
-    }
-    CharacterDatabase.Execute("DELETE FROM character_queststatus WHERE guid = {}", bot->GetGUID().GetCounter());
-}
-
-void RemoveAllEquippedItems(Player* bot)
-{
-    for (uint8 slot = EQUIPMENT_SLOT_START; slot < EQUIPMENT_SLOT_END; ++slot)
-    {
-        if (Item* item = bot->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
-            bot->DestroyItem(INVENTORY_SLOT_BAG_0, slot, true);
-    }
-}
-
-void RemoveAllTradeSkills(Player* bot)
-{
-    static const uint32 tradeSkills[] = {
-        SKILL_ALCHEMY, SKILL_BLACKSMITHING, SKILL_COOKING, SKILL_ENCHANTING,
-        SKILL_ENGINEERING, SKILL_FIRST_AID, SKILL_FISHING, SKILL_HERBALISM,
-        SKILL_JEWELCRAFTING, SKILL_LEATHERWORKING, SKILL_MINING, SKILL_SKINNING,
-        SKILL_TAILORING
-    };
-    for (auto skill : tradeSkills)
-    {
-        if (bot->HasSkill(skill))
-            bot->SetSkill(skill, 0, 0, 0);
-    }
 }
 
 // -----------------------------------------------------------------------------
