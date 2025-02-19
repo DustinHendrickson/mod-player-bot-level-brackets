@@ -13,6 +13,9 @@
 #include <cmath>
 #include <utility>
 #include "PlayerbotFactory.h"
+#include <thread>
+#include <mutex>
+#include <chrono>
 
 void RemoveAllEquippedItems(Player* bot);
 void RemoveAllTradeSkills(Player* bot);
@@ -22,6 +25,9 @@ void RemoveAllActiveAuras(Player* bot);
 
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
+
+static std::mutex g_ResetMutex;
+static bool g_RunningResetThread = true;
 
 // -----------------------------------------------------------------------------
 // LEVEL RANGE CONFIGURATION
@@ -315,19 +321,25 @@ struct PendingResetEntry
 };
 static std::vector<PendingResetEntry> g_PendingLevelResets;
 
-static void ProcessPendingLevelResets()
+static void ProcessPendingLevelResetsAsync()
 {
-    for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end(); )
+    while (g_RunningResetThread)
     {
-        Player* bot = it->bot;
-        int targetRange = it->targetRange;
-        if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
+        std::this_thread::sleep_for(std::chrono::seconds(30)); // Run every 30 seconds
+
+        std::lock_guard<std::mutex> lock(g_ResetMutex);
+        for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end(); )
         {
-            AdjustBotToRange(bot, targetRange, it->factionRanges);
-            it = g_PendingLevelResets.erase(it);
+            Player* bot = it->bot;
+            int targetRange = it->targetRange;
+            if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
+            {
+                AdjustBotToRange(bot, targetRange, it->factionRanges);
+                it = g_PendingLevelResets.erase(it);
+            }
+            else
+                ++it;
         }
-        else
-            ++it;
     }
 }
 
@@ -353,7 +365,15 @@ public:
                          i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper, g_HordeLevelRanges[i].desiredPercent);
             }
         }
+
+        // Start background thread for pending level resets
+    	std::thread(ProcessPendingLevelResetsAsync).detach();
     }
+
+    void OnShutdown() override
+	{
+	    g_RunningResetThread = false;
+	}
 
     void OnUpdate(uint32 diff) override
     {
@@ -361,8 +381,6 @@ public:
         if (m_timer < g_BotDistCheckFrequency * 1000)
             return;
         m_timer = 0;
-
-        ProcessPendingLevelResets();
 
         // Containers for Alliance bots.
         uint32 totalAllianceBots = 0;
