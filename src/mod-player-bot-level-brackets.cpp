@@ -37,6 +37,10 @@ static LevelRangeConfig g_HordeLevelRanges[NUM_RANGES];
 static uint32 g_BotDistCheckFrequency = 300; // in seconds
 static uint32 g_BotDistFlaggedCheckFrequency = 15; // in seconds
 static bool   g_BotDistDebugMode      = false;
+static bool   g_UseDynamicDistribution  = false;
+
+// New configuration: real player weight to boost bracket contributions.
+static float g_RealPlayerWeight = 1.0f;
 
 // Loads the configuration from the config file.
 static void LoadBotLevelBracketsConfig()
@@ -44,6 +48,8 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.DebugMode", false);
     g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFrequency", 300);
     g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
+    g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.UseDynamicDistribution", false);
+    g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.RealPlayerWeight", 1.0f);
 
     // Alliance configuration.
     g_AllianceLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range1Pct", 12)) };
@@ -124,7 +130,7 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
         {
             if (g_BotDistDebugMode)
             {
-            	std::string playerFaction = IsAlliancePlayerBot(bot) ? "Alliance" : "Horde";
+                std::string playerFaction = IsAlliancePlayerBot(bot) ? "Alliance" : "Horde";
                 LOG_INFO("server.loading",
                          "[BotLevelBrackets] AdjustBotToRange: Cannot assign {} Death Knight '{}' ({}) to range {}-{} (below level 55).",
                          playerFaction, bot->GetName(), botOriginalLevel, lowerBound, upperBound);
@@ -156,7 +162,6 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
     }
 
     ChatHandler(bot->GetSession()).SendSysMessage("[mod-bot-level-brackets] Your level has been reset.");
-
 }
 
 // -----------------------------------------------------------------------------
@@ -198,7 +203,7 @@ static bool IsBotSafeForLevelReset(Player* bot)
     if (!bot)
         return false;
     if (!bot->IsInWorld())
-    	return false;
+        return false;
     if (!bot->IsAlive())
         return false;
     if (bot->IsInCombat())
@@ -206,7 +211,7 @@ static bool IsBotSafeForLevelReset(Player* bot)
     if (bot->InBattleground() || bot->InArena() || bot->inRandomLfgDungeon() || bot->InBattlegroundQueue())
         return false;
     if (bot->IsInFlight())
-    	return false;
+        return false;
     if (Group* group = bot->GetGroup())
     {
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
@@ -272,19 +277,85 @@ public:
     void OnUpdate(uint32 diff) override
     {
         m_timer += diff;
-		m_flaggedTimer += diff;
+        m_flaggedTimer += diff;
 
-		// Check if it's time to process pending level resets
-		if (m_flaggedTimer >= g_BotDistFlaggedCheckFrequency * 1000)
-		{
-		    ProcessPendingLevelResets();
-		    m_flaggedTimer = 0;
-		}
+        // Process pending level resets.
+        if (m_flaggedTimer >= g_BotDistFlaggedCheckFrequency * 1000)
+        {
+            ProcessPendingLevelResets();
+            m_flaggedTimer = 0;
+        }
 
-		// Continue with distribution adjustments once its timer expires
+        // Continue with distribution adjustments once the timer expires.
         if (m_timer < g_BotDistCheckFrequency * 1000)
             return;
         m_timer = 0;
+
+        // Dynamic distribution: recalc desired percentages based on non-bot players.
+        if (g_UseDynamicDistribution)
+        {
+            int allianceRealCounts[NUM_RANGES] = {0};
+            int hordeRealCounts[NUM_RANGES] = {0};
+            uint32 totalAllianceReal = 0;
+            uint32 totalHordeReal = 0;
+            // Iterate over all players and count non-bot players.
+            for (auto const& itr : ObjectAccessor::GetPlayers())
+            {
+                Player* player = itr.second;
+                if (!player || !player->IsInWorld())
+                    continue;
+                if (IsPlayerBot(player))
+                    continue; // Skip bots.
+                int rangeIndex = GetLevelRangeIndex(player->GetLevel());
+                if (rangeIndex < 0)
+                    continue;
+                if (player->GetTeamId() == TEAM_ALLIANCE)
+                {
+                    allianceRealCounts[rangeIndex]++;
+                    totalAllianceReal++;
+                }
+                else if (player->GetTeamId() == TEAM_HORDE)
+                {
+                    hordeRealCounts[rangeIndex]++;
+                    totalHordeReal++;
+                }
+            }
+            // Use a baseline weight to ensure an equal share when no real players are present.
+            const float baseline = 1.0f;
+            float allianceTotalWeight = 0.0f;
+            float hordeTotalWeight = 0.0f;
+            float allianceWeights[NUM_RANGES] = {0};
+            float hordeWeights[NUM_RANGES] = {0};
+            for (int i = 0; i < NUM_RANGES; ++i)
+            {
+				allianceWeights[i] = baseline + g_RealPlayerWeight * log(1 + allianceRealCounts[i]);
+
+				hordeWeights[i] = baseline + g_RealPlayerWeight * log(1 + hordeRealCounts[i]);
+
+                allianceTotalWeight += allianceWeights[i];
+                hordeTotalWeight += hordeWeights[i];
+            }
+            // Recalculate desired percentages for each range.
+            for (int i = 0; i < NUM_RANGES; ++i)
+            {
+                g_AllianceLevelRanges[i].desiredPercent = static_cast<uint8>(round((allianceWeights[i] / allianceTotalWeight) * 100));
+                if (g_BotDistDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Dynamic Distribution - Alliance Range {}: {}-{}, Real Players: {} (weight: {:.2f}), New Desired: {}%",
+                             i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, allianceRealCounts[i], allianceWeights[i], g_AllianceLevelRanges[i].desiredPercent);
+                }
+            }
+            
+            for (int i = 0; i < NUM_RANGES; ++i)
+            {
+                g_HordeLevelRanges[i].desiredPercent = static_cast<uint8>(round((hordeWeights[i] / hordeTotalWeight) * 100));
+                if (g_BotDistDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Dynamic Distribution - Horde Range {}: {}-{}, Real Players: {} (weight: {:.2f}), New Desired: {}%",
+                             i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper, hordeRealCounts[i], hordeWeights[i], g_HordeLevelRanges[i].desiredPercent);
+                }
+            }
+        }
 
         // Containers for Alliance bots.
         uint32 totalAllianceBots = 0;

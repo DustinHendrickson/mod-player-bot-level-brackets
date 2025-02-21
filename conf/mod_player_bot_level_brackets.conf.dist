@@ -20,6 +20,20 @@ BotLevelBrackets.CheckFrequency = 300
 #        Default:     15
 BotLevelBrackets.CheckFlaggedFrequency = 15
 
+#    BotLevelBrackets.UseDynamicDistribution
+#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players present in each level bracket.
+#        Default:     0 (disabled)
+#                     Valid values: 0 (off) / 1 (on)
+BotLevelBrackets.UseDynamicDistribution = 0
+
+#
+#    BotLevelBrackets.RealPlayerWeight
+#        Description: A multiplier applied to each real player's contribution in their level bracket.
+#                     When combined with inverse scaling by total player count, a higher value significantly boosts the effective weight
+#                     of a real player when few are online.
+#        Default:     1.0
+BotLevelBrackets.RealPlayerWeight = 1.0
+
 #
 #    Alliance Level Brackets Configuration
 #    The percentages below must sum to 100.
