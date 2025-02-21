@@ -1,23 +1,14 @@
 # AzerothCore Module: Bot Level Brackets
---------
 
 Overview
 --------
-The Bot Level Brackets module for AzerothCore ensures an even spread of player bots across configurable level ranges (brackets). It periodically monitors bot levels and automatically adjusts them by transferring bots from overpopulated brackets to those with a deficit. During adjustments, bot levels are reset, equipped items are destroyed, trade skills are removed, quests are cleared, active auras are removed, pets are dismissed, and auto-maintenance actions are executed. Bots that are not immediately safe for level reset (for example, those in combat or engaged in other activities) are flagged for pending adjustment and processed later when they become safe. Additionally, Death Knight bots are safeguarded to never be assigned a level below 55.
+The Bot Level Brackets module for AzerothCore ensures an even spread of player bots across configurable level ranges (brackets). It periodically monitors bot levels and automatically adjusts them by transferring bots from overpopulated brackets to those with a deficit. During adjustments, bots will be run through the normal Playerbots Randomize function, clearing and restoring them based on their new level. Bots that are not immediately safe for level reset (for example, those in combat or engaged in other activities) are flagged for pending adjustment and processed later when they become safe. Additionally, Death Knight bots are safeguarded to never be assigned a level below 55.
 
 Features
 --------
 - **Configurable Level Brackets:**  
   Define nine distinct level brackets with configurable lower and upper bounds:
-  - 1-9  
-  - 10-19  
-  - 20-29  
-  - 30-39  
-  - 40-49  
-  - 50-59  
-  - 60-69  
-  - 70-79  
-  - 80
+  - 1-9 , 10-19 , 20-29 , 30-39 , 40-49 , 50-59 , 60-69 , 70-79 , 80
 
 - **Faction-Specific Configuration:**  
   Separate configurations for Alliance and Horde bots allow individual control over desired bot percentages within each bracket.
@@ -30,9 +21,6 @@ Features
 
 - **Death Knight Level Safeguard:**  
   Bots of the Death Knight class are enforced a minimum level of 55, ensuring they are only assigned to higher brackets.
-
-- **Automated Maintenance Execution:**  
-  After a level change, the module executes the AutoMaintenanceOnLevelupAction to properly reinitialize the bot’s state.
 
 - **Support for Random Bots:**  
   The module applies exclusively to bots managed by RandomPlayerbotMgr.
@@ -130,7 +118,7 @@ To enable detailed debug logging, update the configuration file:
 
     BotLevelBrackets.DebugMode = 1
 
-This setting outputs logs detailing bot level adjustments, item destruction, pet removal, and the execution of auto-maintenance actions.
+This setting outputs logs detailing bot level adjustments, percentages and distribution to the server console.
 
 License
 -------
