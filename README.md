@@ -1,6 +1,8 @@
 # AzerothCore Module: Bot Level Brackets
 
-![Bot Level Brackets Icon](./icon.png "Bot Level Brackets Icon")
+<p align="center">
+  <img src="./icon.png" alt="Bot Level Brackets Icon" title="Bot Level Brackets Icon">
+</p>
 
 Overview
 --------
