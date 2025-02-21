@@ -328,9 +328,9 @@ public:
             float hordeWeights[NUM_RANGES] = {0};
             for (int i = 0; i < NUM_RANGES; ++i)
             {
-				allianceWeights[i] = baseline + g_RealPlayerWeight * log(1 + allianceRealCounts[i]);
+				allianceWeights[i] = baseline + g_RealPlayerWeight * (totalAllianceReal > 0 ? (1.0f / totalAllianceReal) : 1.0f) * log(1 + allianceRealCounts[i]);
 
-				hordeWeights[i] = baseline + g_RealPlayerWeight * log(1 + hordeRealCounts[i]);
+				hordeWeights[i] = baseline + g_RealPlayerWeight * (totalHordeReal > 0 ? (1.0f / totalHordeReal) : 1.0f) * log(1 + hordeRealCounts[i]);
 
                 allianceTotalWeight += allianceWeights[i];
                 hordeTotalWeight += hordeWeights[i];
