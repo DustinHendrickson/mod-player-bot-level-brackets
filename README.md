@@ -41,6 +41,18 @@ Features
 - **Debug Mode:**  
   An optional debug mode provides detailed logging for monitoring bot adjustments and troubleshooting module operations.
 
+### Minimum and Maximum Bot Level Support
+
+This module now supports setting a minimum and maximum level for random bots via the Playerbots `playerbots.conf` options:
+
+- **AiPlayerbot.RandomBotMinLevel:**  
+  Sets the minimum level allowed for random bots. The default value is 1.
+
+- **AiPlayerbot.RandomBotMaxLevel:**  
+  Sets the maximum level allowed for random bots. The default value is 80.
+
+**Warning:** If you configure the maximum bot level to a value below 55, ensure that Death Knight bots are disabled. The module enforces a minimum level of 55 for Death Knight bots; therefore, setting the maximum level under 55 would conflict with this safeguard and could lead to unintended behavior and Death Knight bots not moving brackets.
+
 ### Dynamic Real Player Weighting and Scaling
 
 When dynamic distribution is enabled (`BotLevelBrackets.UseDynamicDistribution`), the module recalculates the desired bot percentages for each level bracket based on the number of non-bot players present. 

@@ -16,6 +16,7 @@
 
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
+static void ClampAndBalanceBrackets();
 
 // -----------------------------------------------------------------------------
 // LEVEL RANGE CONFIGURATION
@@ -30,7 +31,13 @@ struct LevelRangeConfig
 
 static const uint8 NUM_RANGES = 9;
 
+// Global variables to restrict bot levels.
+static uint8 g_RandomBotMinLevel = 1;
+static uint8 g_RandomBotMaxLevel = 80;
+
+
 // Separate arrays for Alliance and Horde.
+static LevelRangeConfig g_BaseLevelRanges[NUM_RANGES];
 static LevelRangeConfig g_AllianceLevelRanges[NUM_RANGES];
 static LevelRangeConfig g_HordeLevelRanges[NUM_RANGES];
 
@@ -39,7 +46,7 @@ static uint32 g_BotDistFlaggedCheckFrequency = 15; // in seconds
 static bool   g_BotDistDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
 
-// New configuration: real player weight to boost bracket contributions.
+// Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
 
 // Loads the configuration from the config file.
@@ -50,6 +57,21 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
     g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.UseDynamicDistribution", false);
     g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.RealPlayerWeight", 1.0f);
+
+    // Load the bot level restrictions.
+    g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
+    g_RandomBotMaxLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMaxLevel", 80));
+
+    // Base Level Ranges
+    g_BaseLevelRanges[0] = { 1, 9, 0 };
+    g_BaseLevelRanges[1] = { 10, 19, 0};
+    g_BaseLevelRanges[2] = { 20, 29, 0};
+    g_BaseLevelRanges[3] = { 30, 39, 0};
+    g_BaseLevelRanges[4] = { 40, 49, 0};
+    g_BaseLevelRanges[5] = { 50, 59, 0};
+    g_BaseLevelRanges[6] = { 60, 69, 0};
+    g_BaseLevelRanges[7] = { 70, 79, 0};
+    g_BaseLevelRanges[8] = { 80, 80, 0};
 
     // Alliance configuration.
     g_AllianceLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range1Pct", 12)) };
@@ -73,28 +95,15 @@ static void LoadBotLevelBracketsConfig()
     g_HordeLevelRanges[7] = { 70, 79, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range8Pct", 11)) };
     g_HordeLevelRanges[8] = { 80, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range9Pct", 11)) };
 
-    uint32 totalAlliancePercent = 0;
-    uint32 totalHordePercent = 0;
-    for (uint8 i = 0; i < NUM_RANGES; ++i)
-    {
-        totalAlliancePercent += g_AllianceLevelRanges[i].desiredPercent;
-        totalHordePercent += g_HordeLevelRanges[i].desiredPercent;
-    }
-    if (totalAlliancePercent != 100)
-        LOG_ERROR("server.loading", "[BotLevelBrackets] Alliance: Sum of percentages is {} (expected 100).", totalAlliancePercent);
-    if (totalHordePercent != 100)
-        LOG_ERROR("server.loading", "[BotLevelBrackets] Horde: Sum of percentages is {} (expected 100).", totalHordePercent);
+    ClampAndBalanceBrackets();
 }
 
-// Returns the index of the level range that the given level belongs to (boundaries are the same for both factions).
+// Returns the index of the level range bracket that the given level belongs to.
 static int GetLevelRangeIndex(uint8 level)
 {
-    // Here we assume that all ranges share the same lower and upper bounds.
-    // (If not, you may need to adjust this based on faction.)
     for (int i = 0; i < NUM_RANGES; ++i)
     {
-        // Use Alliance boundaries as reference.
-        if (level >= g_AllianceLevelRanges[i].lower && level <= g_AllianceLevelRanges[i].upper)
+        if (level >= g_BaseLevelRanges[i].lower && level <= g_BaseLevelRanges[i].upper)
             return i;
     }
     return -1;
@@ -107,7 +116,6 @@ static uint8 GetRandomLevelInRange(const LevelRangeConfig& range)
 }
 
 // Adjusts a bot's level by selecting a random level within the target range.
-// Also resets XP, destroys equipped items, removes the pet, and executes maintenance.
 static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRangeConfig* factionRanges)
 {
     if (!bot || targetRangeIndex < 0 || targetRangeIndex >= NUM_RANGES)
@@ -182,7 +190,7 @@ static bool IsPlayerRandomBot(Player* player)
     return sRandomPlayerbotMgr->IsRandomBot(player);
 }
 
-// Helper functions to determine faction. Adjust these functions based on your implementation.
+// Helper functions to determine faction.
 static bool IsAlliancePlayerBot(Player* bot)
 {
     // Assumes GetTeam() returns TEAM_ALLIANCE for Alliance bots.
@@ -193,6 +201,78 @@ static bool IsHordePlayerBot(Player* bot)
 {
     // Assumes GetTeam() returns TEAM_HORDE for Horde bots.
     return bot && (bot->GetTeamId() == TEAM_HORDE);
+}
+
+static void ClampAndBalanceBrackets()
+{
+    // First, adjust Alliance brackets.
+    for (uint8 i = 0; i < NUM_RANGES; ++i)
+    {
+        if (g_AllianceLevelRanges[i].lower < g_RandomBotMinLevel)
+            g_AllianceLevelRanges[i].lower = g_RandomBotMinLevel;
+        if (g_AllianceLevelRanges[i].upper > g_RandomBotMaxLevel)
+            g_AllianceLevelRanges[i].upper = g_RandomBotMaxLevel;
+        // If the adjusted bracket is invalid, mark it to not be used.
+        if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
+            g_AllianceLevelRanges[i].desiredPercent = 0;
+    }
+    // Then, adjust Horde brackets similarly.
+    for (uint8 i = 0; i < NUM_RANGES; ++i)
+    {
+        if (g_HordeLevelRanges[i].lower < g_RandomBotMinLevel)
+            g_HordeLevelRanges[i].lower = g_RandomBotMinLevel;
+        if (g_HordeLevelRanges[i].upper > g_RandomBotMaxLevel)
+            g_HordeLevelRanges[i].upper = g_RandomBotMaxLevel;
+        if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
+            g_HordeLevelRanges[i].desiredPercent = 0;
+    }
+    // Balance desired percentages so the sum is 100.
+    uint32 totalAlliance = 0;
+    uint32 totalHorde = 0;
+    for (uint8 i = 0; i < NUM_RANGES; ++i)
+    {
+        totalAlliance += g_AllianceLevelRanges[i].desiredPercent;
+        totalHorde += g_HordeLevelRanges[i].desiredPercent;
+    }
+    // If totals are not 100, then distribute the missing percent among valid brackets.
+    if(totalAlliance != 100 && totalAlliance > 0)
+    {
+
+        LOG_INFO("server.loading", "[BotLevelBrackets] Alliance: Sum of percentages is {} (expected 100). Auto adjusting.", totalAlliance);
+        
+        int missing = 100 - totalAlliance;
+        while(missing > 0)
+        {
+            for (uint8 i = 0; i < NUM_RANGES && missing > 0; ++i)
+            {
+                if(g_AllianceLevelRanges[i].lower <= g_AllianceLevelRanges[i].upper &&
+                   g_AllianceLevelRanges[i].desiredPercent > 0)
+                {
+                    g_AllianceLevelRanges[i].desiredPercent++;
+                    missing--;
+                }
+            }
+        }
+    }
+    if(totalHorde != 100 && totalHorde > 0)
+    {
+        
+        LOG_INFO("server.loading", "[BotLevelBrackets] Horde: Sum of percentages is {} (expected 100). Auto adjusting.", totalHorde);
+        
+        int missing = 100 - totalHorde;
+        while(missing > 0)
+        {
+            for (uint8 i = 0; i < NUM_RANGES && missing > 0; ++i)
+            {
+                if(g_HordeLevelRanges[i].lower <= g_HordeLevelRanges[i].upper &&
+                   g_HordeLevelRanges[i].desiredPercent > 0)
+                {
+                    g_HordeLevelRanges[i].desiredPercent++;
+                    missing--;
+                }
+            }
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -268,6 +348,9 @@ public:
             {
                 LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {}: {}-{}, Desired Percentage: {}%",
                          i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, g_AllianceLevelRanges[i].desiredPercent);
+            }
+            for (uint8 i = 0; i < NUM_RANGES; ++i)
+            {
                 LOG_INFO("server.loading", "[BotLevelBrackets] Horde Range {}: {}-{}, Desired Percentage: {}%",
                          i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper, g_HordeLevelRanges[i].desiredPercent);
             }
@@ -328,9 +411,20 @@ public:
             float hordeWeights[NUM_RANGES] = {0};
             for (int i = 0; i < NUM_RANGES; ++i)
             {
-				allianceWeights[i] = baseline + g_RealPlayerWeight * (totalAllianceReal > 0 ? (1.0f / totalAllianceReal) : 1.0f) * log(1 + allianceRealCounts[i]);
+                // Only count valid brackets.
+                if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
+                    allianceWeights[i] = 0.0f;
+                else
+                    allianceWeights[i] = baseline + g_RealPlayerWeight *
+                        (totalAllianceReal > 0 ? (1.0f / totalAllianceReal) : 1.0f) *
+                        log(1 + allianceRealCounts[i]);
 
-				hordeWeights[i] = baseline + g_RealPlayerWeight * (totalHordeReal > 0 ? (1.0f / totalHordeReal) : 1.0f) * log(1 + hordeRealCounts[i]);
+                if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
+                    hordeWeights[i] = 0.0f;
+                else
+                    hordeWeights[i] = baseline + g_RealPlayerWeight *
+                        (totalHordeReal > 0 ? (1.0f / totalHordeReal) : 1.0f) *
+                        log(1 + hordeRealCounts[i]);
 
                 allianceTotalWeight += allianceWeights[i];
                 hordeTotalWeight += hordeWeights[i];
@@ -345,6 +439,42 @@ public:
                              i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, allianceRealCounts[i], allianceWeights[i], g_AllianceLevelRanges[i].desiredPercent);
                 }
             }
+
+            uint8 sumAlliance = 0;
+            for (int i = 0; i < NUM_RANGES; ++i)
+                sumAlliance += g_AllianceLevelRanges[i].desiredPercent;
+            if (sumAlliance < 100 && allianceTotalWeight > 0)
+            {
+                uint8 missing = 100 - sumAlliance;
+                if (g_BotDistDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance normalization: current sum = {}, missing = {}", sumAlliance, missing);
+                }
+                while (missing > 0)
+                {
+                    for (int i = 0; i < NUM_RANGES && missing > 0; ++i)
+                    {
+                        if (g_AllianceLevelRanges[i].lower <= g_AllianceLevelRanges[i].upper &&
+                            allianceWeights[i] > 0)
+                        {
+                            g_AllianceLevelRanges[i].desiredPercent++;
+                            missing--;
+                        }
+                    }
+                }
+                if (g_BotDistDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance normalized percentages:");
+                    for (int i = 0; i < NUM_RANGES; ++i)
+                    {
+                        LOG_INFO("server.loading", "    Range {}: {}% ({}-{})", i + 1,
+                                 g_AllianceLevelRanges[i].desiredPercent,
+                                 g_AllianceLevelRanges[i].lower,
+                                 g_AllianceLevelRanges[i].upper);
+                    }
+                }
+            }
+
             
             for (int i = 0; i < NUM_RANGES; ++i)
             {
@@ -355,6 +485,42 @@ public:
                              i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper, hordeRealCounts[i], hordeWeights[i], g_HordeLevelRanges[i].desiredPercent);
                 }
             }
+
+            uint8 sumHorde = 0;
+            for (int i = 0; i < NUM_RANGES; ++i)
+                sumHorde += g_HordeLevelRanges[i].desiredPercent;
+            if (sumHorde < 100 && hordeTotalWeight > 0)
+            {
+                uint8 missing = 100 - sumHorde;
+                if (g_BotDistDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Horde normalization: current sum = {}, missing = {}", sumHorde, missing);
+                }
+                while (missing > 0)
+                {
+                    for (int i = 0; i < NUM_RANGES && missing > 0; ++i)
+                    {
+                        if (g_HordeLevelRanges[i].lower <= g_HordeLevelRanges[i].upper &&
+                            hordeWeights[i] > 0)
+                        {
+                            g_HordeLevelRanges[i].desiredPercent++;
+                            missing--;
+                        }
+                    }
+                }
+                if (g_BotDistDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Horde normalized percentages:");
+                    for (int i = 0; i < NUM_RANGES; ++i)
+                    {
+                        LOG_INFO("server.loading", "    Range {}: {}% ({}-{})", i + 1,
+                                 g_HordeLevelRanges[i].desiredPercent,
+                                 g_HordeLevelRanges[i].lower,
+                                 g_HordeLevelRanges[i].upper);
+                    }
+                }
+            }
+
         }
 
         // Containers for Alliance bots.
