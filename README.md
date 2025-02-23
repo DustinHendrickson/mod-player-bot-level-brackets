@@ -59,6 +59,9 @@ When dynamic distribution is enabled (`BotLevelBrackets.UseDynamicDistribution`)
 
 The total weight across all brackets is computed, and each bracket’s desired percentage is derived from its share of that total. This ensures that while more players in a bracket increase its weight, each additional player contributes progressively less.
 
+### Troubleshooting
+
+1. **Bots are not randomizing their levels within the ranges brackets.** -> Make sure in your `playerbots.conf` that `AiPlayerbot.DisableRandomLevels` = false. Otherwise bots will be all reset to the set level in your playerbots config.
 
 Installation
 ------------
