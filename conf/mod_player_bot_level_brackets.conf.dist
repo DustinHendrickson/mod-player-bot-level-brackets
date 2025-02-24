@@ -3,6 +3,12 @@
 ##############################################
 # mod-player-bot-level-brackets configuration
 ##############################################
+#	BotLevelBrackets.ModEnabled
+#		Description: Turns module on/on
+#		Default:	1 (enabled)
+#					Valid Values: 0 (off) / 1 (on)
+BotLevelBrackets.ModEnabled = 1
+
 #
 #    BotLevelBrackets.DebugMode
 #        Description: Enables debug logging for the Bot Level Brackets module.
