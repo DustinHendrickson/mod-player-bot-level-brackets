@@ -15,7 +15,7 @@ Features
 - **Configurable Faction-Specific Level Brackets:**  
   Define nine distinct level brackets for Alliance and Horde bots with configurable lower and upper bounds:
   - 1-9 , 10-19 , 20-29 , 30-39 , 40-49 , 50-59 , 60-69 , 70-79 , 80
-  - 
+
 - **Desired Percentage Distribution:**  
   Target percentages can be set for the number of bots within each level bracket. The sum of percentages for each faction must equal 100. If it does not, the system will try to balance out the remaining percentages itself.
 
