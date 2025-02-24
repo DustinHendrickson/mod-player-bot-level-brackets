@@ -15,6 +15,9 @@
 #include <limits>
 #include <algorithm>
 #include "PlayerbotFactory.h"
+#include "DatabaseEnv.h"
+#include "QueryResult.h"
+
 
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
@@ -47,6 +50,7 @@ static uint32 g_BotDistCheckFrequency = 300; // in seconds
 static uint32 g_BotDistFlaggedCheckFrequency = 15; // in seconds
 static bool   g_BotDistDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
+static bool   g_IgnoreFriendListed = true;
 
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
@@ -59,6 +63,7 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
     g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.UseDynamicDistribution", false);
     g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.RealPlayerWeight", 1.0f);
+    g_IgnoreFriendListed = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreFriendListed", true);
 
     // Load the bot level restrictions.
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
@@ -350,6 +355,20 @@ static bool IsBotSafeForLevelReset(Player* bot)
             }
         }
     }
+    // Lets ignore bots that have human friends
+    if (g_IgnoreFriendListed)
+    {
+        QueryResult result = CharacterDatabase.Query("SELECT COUNT(friend) FROM character_social WHERE friend IN (SELECT guid FROM characters WHERE name ='{}') and flags = 1", bot->GetName());
+        uint32 friendCount = 0;
+        friendCount = result->Fetch()->Get<uint32>();
+
+        if (friendCount >= 1)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
+            return false;
+        }
+    }
+
     return true;
 }
 

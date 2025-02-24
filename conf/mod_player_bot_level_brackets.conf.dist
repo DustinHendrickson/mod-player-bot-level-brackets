@@ -35,6 +35,13 @@ BotLevelBrackets.UseDynamicDistribution = 0
 BotLevelBrackets.RealPlayerWeight = 1.0
 
 #
+#	BotLevelBrackets.IgnoreFriendListed
+#		 Description: Ignore bots that are on real players friend's lists from any brackets
+#		 Default:	  1 (enabled)
+#					  Valid values: 0 (off) / 1 (on)
+BotLevelBrackets.IgnoreFriendListed = 1	
+
+#
 #    Alliance Level Brackets Configuration
 #    The percentages below must sum to 100.
 #
