@@ -12,15 +12,12 @@ The Bot Level Brackets module for AzerothCore ensures an even spread of player b
 
 Features
 --------
-- **Configurable Level Brackets:**  
-  Define nine distinct level brackets with configurable lower and upper bounds:
+- **Configurable Faction-Specific Level Brackets:**  
+  Define nine distinct level brackets for Alliance and Horde bots with configurable lower and upper bounds:
   - 1-9 , 10-19 , 20-29 , 30-39 , 40-49 , 50-59 , 60-69 , 70-79 , 80
-
-- **Faction-Specific Configuration:**  
-  Separate configurations for Alliance and Horde bots allow individual control over desired bot percentages within each bracket.
-
+  - 
 - **Desired Percentage Distribution:**  
-  Target percentages can be set for the number of bots within each level bracket. The sum of percentages for each faction must equal 100.
+  Target percentages can be set for the number of bots within each level bracket. The sum of percentages for each faction must equal 100. If it does not, the system will try to balance out the remaining percentages itself.
 
 - **Dynamic Bot Adjustment:**  
   Bots in overpopulated brackets are automatically adjusted to a random level within a bracket with a deficit. Adjustments include resetting XP, removing equipped items, trade skills, learned spells, quests, and active auras, and dismissing pets.
@@ -31,12 +28,12 @@ Features
 - **Support for Random Bots:**  
   The module applies exclusively to bots managed by RandomPlayerbotMgr.
 
+- **Dynamic Distribution Toggle:**  
+  Enable or disable the dynamic recalculation of bot distribution percentages based on the number of non-bot players in each level bracket via the `BotLevelBrackets.UseDynamicDistribution` option.
+  
 - **Dynamic Real Player Weighting with Inverse Scaling:**  
   When dynamic distribution is enabled, the module uses a configurable weight multiplier (set via `BotLevelBrackets.RealPlayerWeight`) to boost each real player's contribution to the desired distribution. This weight is further scaled inversely by the total number of real players online, ensuring that when few players are active, each player's impact on the bot distribution is significantly increased.  
   **Note:** The `RealPlayerWeight` option only takes effect when `BotLevelBrackets.UseDynamicDistribution` is enabled.
-
-- **Dynamic Distribution Toggle:**  
-  Enable or disable the dynamic recalculation of bot distribution percentages based on the number of non-bot players in each level bracket via the `BotLevelBrackets.UseDynamicDistribution` option.
 
 - **Debug Mode:**  
   An optional debug mode provides detailed logging for monitoring bot adjustments and troubleshooting module operations.
@@ -51,7 +48,7 @@ This module now supports setting a minimum and maximum level for random bots via
 - **AiPlayerbot.RandomBotMaxLevel:**  
   Sets the maximum level allowed for random bots. The default value is 80.
 
-**Warning:** If you configure the maximum bot level to a value below 55, ensure that Death Knight bots are disabled. The module enforces a minimum level of 55 for Death Knight bots; therefore, setting the maximum level under 55 would conflict with this safeguard and could lead to unintended behavior and Death Knight bots not moving brackets.
+> **Warning:** If you configure the maximum bot level to a value below 55, ensure that Death Knight bots are disabled. The module enforces a minimum level of 55 for Death Knight bots; therefore, setting the maximum level under 55 would conflict with this safeguard and could lead to unintended behavior and Death Knight bots not moving brackets.
 
 ### Dynamic Real Player Weighting and Scaling
 
@@ -59,9 +56,6 @@ When dynamic distribution is enabled (`BotLevelBrackets.UseDynamicDistribution`)
 
 The total weight across all brackets is computed, and each bracket’s desired percentage is derived from its share of that total. This ensures that while more players in a bracket increase its weight, each additional player contributes progressively less.
 
-### Troubleshooting
-
-1. **Bots are not randomizing their levels within the ranges brackets.** -> Make sure in your `playerbots.conf` that `AiPlayerbot.DisableRandomLevels` = false. Otherwise bots will be all reset to the set level in your playerbots config.
 
 Installation
 ------------
@@ -140,6 +134,11 @@ To enable detailed debug logging, update the configuration file:
     BotLevelBrackets.DebugMode = 1
 
 This setting outputs logs detailing bot level adjustments, percentages and distribution to the server console.
+
+
+Troubleshooting
+---------
+> **Bots are not randomizing their levels within the ranges brackets.** Make sure in your `playerbots.conf` that `AiPlayerbot.DisableRandomLevels` = false. Otherwise bots will be all reset to the set level in your playerbots config.
 
 License
 -------
