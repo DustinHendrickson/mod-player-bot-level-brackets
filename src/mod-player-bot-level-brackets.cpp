@@ -12,6 +12,8 @@
 #include <vector>
 #include <cmath>
 #include <utility>
+#include <limits>
+#include <algorithm>
 #include "PlayerbotFactory.h"
 
 static bool IsAlliancePlayerBot(Player* bot);
@@ -62,17 +64,6 @@ static void LoadBotLevelBracketsConfig()
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
     g_RandomBotMaxLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMaxLevel", 80));
 
-    // Base Level Ranges
-    g_BaseLevelRanges[0] = { 1, 9, 0 };
-    g_BaseLevelRanges[1] = { 10, 19, 0};
-    g_BaseLevelRanges[2] = { 20, 29, 0};
-    g_BaseLevelRanges[3] = { 30, 39, 0};
-    g_BaseLevelRanges[4] = { 40, 49, 0};
-    g_BaseLevelRanges[5] = { 50, 59, 0};
-    g_BaseLevelRanges[6] = { 60, 69, 0};
-    g_BaseLevelRanges[7] = { 70, 79, 0};
-    g_BaseLevelRanges[8] = { 80, 80, 0};
-
     // Alliance configuration.
     g_AllianceLevelRanges[0] = { 1, 9,   static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range1Pct", 12)) };
     g_AllianceLevelRanges[1] = { 10, 19, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Alliance.Range2Pct", 11)) };
@@ -99,13 +90,31 @@ static void LoadBotLevelBracketsConfig()
 }
 
 // Returns the index of the level range bracket that the given level belongs to.
-static int GetLevelRangeIndex(uint8 level)
+// If the bot is out of range, it returns -1
+static int GetLevelRangeIndex(uint8 level, uint8 teamID)
 {
-    for (int i = 0; i < NUM_RANGES; ++i)
+    // If the bot's level is outside the allowed global bounds, signal an invalid bracket.
+    if (level < g_RandomBotMinLevel || level > g_RandomBotMaxLevel)
+        return -1;
+
+    if(teamID == TEAM_ALLIANCE)
     {
-        if (level >= g_BaseLevelRanges[i].lower && level <= g_BaseLevelRanges[i].upper)
-            return i;
+        for (int i = 0; i < NUM_RANGES; ++i)
+        {
+            if (level >= g_AllianceLevelRanges[i].lower && level <= g_AllianceLevelRanges[i].upper)
+                return i;
+        }
     }
+
+    if(teamID == TEAM_HORDE)
+    {
+        for (int i = 0; i < NUM_RANGES; ++i)
+        {
+            if (level >= g_HordeLevelRanges[i].lower && level <= g_HordeLevelRanges[i].upper)
+                return i;
+        }
+    }
+
     return -1;
 }
 
@@ -201,6 +210,25 @@ static bool IsHordePlayerBot(Player* bot)
 {
     // Assumes GetTeam() returns TEAM_HORDE for Horde bots.
     return bot && (bot->GetTeamId() == TEAM_HORDE);
+}
+
+static void LogAllBotLevels()
+{
+    std::map<uint8, uint32> botLevelCount;
+    for (auto const& itr : ObjectAccessor::GetPlayers())
+    {
+        Player* player = itr.second;
+        if (!player || !player->IsInWorld())
+            continue;
+        if (!IsPlayerBot(player))
+            continue;
+        uint8 level = player->GetLevel();
+        botLevelCount[level]++;
+    }
+    for (const auto& entry : botLevelCount)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Level {}: {} bots", entry.first, entry.second);
+    }
 }
 
 static void ClampAndBalanceBrackets()
@@ -362,6 +390,65 @@ static void ProcessPendingLevelResets()
     }
 }
 
+// This function returns a valid bracket index for the given player's level.
+// If the player's level is out of range (GetLevelRangeIndex returns -1),
+// it computes the closest valid bracket using the provided factionRanges,
+// flags the player for a pending reset by adding it to g_PendingLevelResets,
+static int GetOrFlagPlayerBracket(Player* player)
+{
+    int rangeIndex = GetLevelRangeIndex(player->GetLevel(), player->GetTeamId());
+    if (rangeIndex >= 0)
+        return rangeIndex;
+
+    LevelRangeConfig* factionRanges = nullptr;
+    if (IsAlliancePlayerBot(player))
+        factionRanges = g_AllianceLevelRanges;
+    else if (IsHordePlayerBot(player))
+        factionRanges = g_HordeLevelRanges;
+    else
+        return -1; // Unknown faction
+
+    // Player's level did not fall into any base range; compute the closest valid bracket.
+    int targetRange = -1;
+    int smallestDiff = std::numeric_limits<int>::max();
+    for (int i = 0; i < NUM_RANGES; ++i)
+    {
+        // Only consider valid brackets (those not disabled by ClampAndBalanceBrackets)
+        if (factionRanges[i].lower > factionRanges[i].upper)
+            continue;
+        int diff = 0;
+        if (player->GetLevel() < factionRanges[i].lower)
+            diff = factionRanges[i].lower - player->GetLevel();
+        else if (player->GetLevel() > factionRanges[i].upper)
+            diff = player->GetLevel() - factionRanges[i].upper;
+        if (diff < smallestDiff)
+        {
+            smallestDiff = diff;
+            targetRange = i;
+        }
+    }
+
+    if (targetRange >= 0)
+    {
+        // Add the player to the pending reset list if not already flagged.
+        bool alreadyFlagged = false;
+        for (const auto &entry : g_PendingLevelResets)
+        {
+            if (entry.bot == player)
+            {
+                alreadyFlagged = true;
+                break;
+            }
+        }
+        if (!alreadyFlagged)
+        {
+            g_PendingLevelResets.push_back({player, targetRange, factionRanges});
+        }
+    }
+
+    return -1;
+}
+
 // -----------------------------------------------------------------------------
 // WORLD SCRIPT: Bot Level Distribution with Faction Separation
 // -----------------------------------------------------------------------------
@@ -422,7 +509,7 @@ public:
                     continue;
                 if (IsPlayerBot(player))
                     continue; // Skip bots.
-                int rangeIndex = GetLevelRangeIndex(player->GetLevel());
+                int rangeIndex = GetOrFlagPlayerBracket(player);
                 if (rangeIndex < 0)
                     continue;
                 if (player->GetTeamId() == TEAM_ALLIANCE)
@@ -596,7 +683,7 @@ public:
             if (IsAlliancePlayerBot(player))
             {
                 totalAllianceBots++;
-                int rangeIndex = GetLevelRangeIndex(player->GetLevel());
+                int rangeIndex = GetOrFlagPlayerBracket(player);
                 if (rangeIndex >= 0)
                 {
                     allianceActualCounts[rangeIndex]++;
@@ -614,7 +701,7 @@ public:
             else if (IsHordePlayerBot(player))
             {
                 totalHordeBots++;
-                int rangeIndex = GetLevelRangeIndex(player->GetLevel());
+                int rangeIndex = GetOrFlagPlayerBracket(player);
                 if (rangeIndex >= 0)
                 {
                     hordeActualCounts[rangeIndex]++;
@@ -914,6 +1001,8 @@ public:
             LOG_INFO("server.loading", "[BotLevelBrackets] ========================================= COMPLETE");
             LOG_INFO("server.loading", "[BotLevelBrackets] Distribution adjustment complete. Alliance bots: {}, Horde bots: {}.",
                      totalAllianceBots, totalHordeBots);
+            LOG_INFO("server.loading", "[BotLevelBrackets] =========================================");
+            LogAllBotLevels();
             LOG_INFO("server.loading", "[BotLevelBrackets] =========================================");
             int allianceDesiredCounts[NUM_RANGES] = {0};
             for (int i = 0; i < NUM_RANGES; ++i)
