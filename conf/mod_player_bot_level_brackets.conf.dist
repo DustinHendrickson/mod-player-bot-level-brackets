@@ -4,11 +4,23 @@
 # mod-player-bot-level-brackets configuration
 ##############################################
 #
-#    BotLevelBrackets.DebugMode
-#        Description: Enables debug logging for the Bot Level Brackets module.
+#    BotLevelBrackets.Enabled
+#        Description: Enables the module.
+#        Default:     1 (enabled)
+#                     Valid values: 0 (off) / 1 (on)
+BotLevelBrackets.Enabled = 1
+
+#    BotLevelBrackets.FullDebugMode
+#        Description: Enables full debug logging for the Bot Level Brackets module.
 #        Default:     0 (disabled)
 #                     Valid values: 0 (off) / 1 (on)
-BotLevelBrackets.DebugMode = 0
+BotLevelBrackets.FullDebugMode = 0
+
+#    BotLevelBrackets.LiteDebugMode
+#        Description: Enables lite debug logging for the Bot Level Brackets module.
+#        Default:     0 (disabled)
+#                     Valid values: 0 (off) / 1 (on)
+BotLevelBrackets.LiteDebugMode = 0
 
 #    BotLevelBrackets.CheckFrequency
 #        Description: The frequency (in seconds) at which the bot level distribution check is performed.
