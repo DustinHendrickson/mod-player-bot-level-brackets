@@ -39,6 +39,8 @@ static uint8 g_RandomBotMaxLevel = 80;
 
 // New configuration option to enable/disable the mod. Default is true.
 static bool g_BotLevelBracketsEnabled = true;
+// New configuration option to ignore bots in guilds with a real player online. Default is true.
+static bool g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers = true;
 
 // Separate arrays for Alliance and Horde.
 static LevelRangeConfig g_BaseLevelRanges[NUM_RANGES];
@@ -54,10 +56,14 @@ static bool   g_UseDynamicDistribution  = false;
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
 
+// -----------------------------------------------------------------------------
 // Loads the configuration from the config file.
+// -----------------------------------------------------------------------------
 static void LoadBotLevelBracketsConfig()
 {
     g_BotLevelBracketsEnabled = sConfigMgr->GetOption<bool>("BotLevelBrackets.Enabled", true);
+    // Load the new option to ignore guild bots with a real player online.
+    g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreGuildBotsWithRealPlayers", true);
     
     g_BotDistFullDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.FullDebugMode", false);
     g_BotDistLiteDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.LiteDebugMode", false);
@@ -240,6 +246,30 @@ static void LogAllBotLevels()
     }
 }
 
+// -----------------------------------------------------------------------------
+// HELPER FUNCTION: Check if a bot is in a guild with at least one real player online.
+// -----------------------------------------------------------------------------
+static bool BotInGuildWithRealPlayer(Player* bot)
+{
+    if (!bot)
+        return false;
+    // If the bot is not in a guild, nothing to do.
+    uint32 guildId = bot->GetGuildId();
+    if (guildId == 0)
+        return false;
+
+    // Iterate over all players and check for an online, non-bot member in the same guild.
+    for (auto const& itr : ObjectAccessor::GetPlayers())
+    {
+        Player* member = itr.second;
+        if (!member || !member->IsInWorld())
+            continue;
+        if (!IsPlayerBot(member) && member->GetGuildId() == guildId)
+            return true;
+    }
+    return false;
+}
+
 static void ClampAndBalanceBrackets()
 {
     // First, adjust Alliance brackets.
@@ -413,7 +443,12 @@ static void ProcessPendingLevelResets()
     {
         Player* bot = it->bot;
         int targetRange = it->targetRange;
-
+        // If the bot is in a guild with a real player online and the option is enabled, remove it from pending resets.
+        if (g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
+        {
+            it = g_PendingLevelResets.erase(it);
+            continue;
+        }
         if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
         {
             AdjustBotToRange(bot, targetRange, it->factionRanges);
@@ -730,6 +765,9 @@ public:
                     LOG_INFO("server.loading", "[BotLevelBrackets] Skipping player '{}' as they are not a random bot.", player->GetName());
                 continue;
             }
+            // If the bot is in a guild with a real player online and the option is enabled, skip it.
+            if (g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(player))
+                continue;
 
             if (IsAlliancePlayerBot(player))
             {

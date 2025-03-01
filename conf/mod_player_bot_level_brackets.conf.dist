@@ -32,6 +32,12 @@ BotLevelBrackets.CheckFrequency = 300
 #        Default:     15
 BotLevelBrackets.CheckFlaggedFrequency = 15
 
+#    BotLevelBrackets.IgnoreGuildBotsWithRealPlayers
+#        Description: When enabled, bots that are in a guild with at least one real (non-bot) player online are excluded from bot bracket calculations and will not be level changed or flagged.
+#        Default:     1 (enabled)
+#                     Valid values: 0 (disabled) / 1 (enabled)
+BotLevelBrackets.IgnoreGuildBotsWithRealPlayers = 1
+
 #    BotLevelBrackets.UseDynamicDistribution
 #        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players present in each level bracket.
 #        Default:     0 (disabled)
