@@ -422,14 +422,17 @@ static bool IsBotSafeForLevelReset(Player* bot)
     }
     // Lets ignore bots that have human friends
     if (g_IgnoreFriendListed)
-    {
+    {        
         QueryResult result = CharacterDatabase.Query("SELECT COUNT(friend) FROM character_social WHERE friend IN (SELECT guid FROM characters WHERE name ='{}') and flags = 1", bot->GetName());
         uint32 friendCount = 0;
-        friendCount = result->Fetch()->Get<uint32>();
-
+        friendCount = result->Fetch()->Get<uint32>();       
+        
         if (friendCount >= 1)
         {
-            LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
+            if (g_BotDistFullDebugMode)
+            {
+                LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
+            }
             return false;
         }
     }
