@@ -43,7 +43,7 @@ static uint8 g_RandomBotMaxLevel = 80;
 // New configuration option to enable/disable the mod. Default is true.
 static bool g_BotLevelBracketsEnabled = true;
 // New configuration option to ignore bots in guilds with a real player online. Default is true.
-static bool g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers = true;
+static bool g_IgnoreGuildBotsWithRealPlayers = true;
 
 // Separate arrays for Alliance and Horde.
 static LevelRangeConfig g_BaseLevelRanges[NUM_RANGES];
@@ -70,7 +70,7 @@ static void LoadBotLevelBracketsConfig()
 {
     g_BotLevelBracketsEnabled = sConfigMgr->GetOption<bool>("BotLevelBrackets.Enabled", true);
     // Load the new option to ignore guild bots with a real player online.
-    g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreGuildBotsWithRealPlayers", true);
+    g_IgnoreGuildBotsWithRealPlayers = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreGuildBotsWithRealPlayers", true);
     
     g_BotDistFullDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.FullDebugMode", false);
     g_BotDistLiteDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.LiteDebugMode", false);
@@ -309,6 +309,29 @@ static bool BotInGuildWithRealPlayer(Player* bot)
     return false;
 }
 
+static bool BotInFriendList(Player* bot)
+{
+    if (!bot)
+        return false;
+
+    for (size_t i = 0; i < SocialFriendsList.size(); ++i)
+    {
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] Check bot {} against SocialFriendsList Array Character GUID {}", bot->GetName(), SocialFriendsList[i]);
+        }
+        if (SocialFriendsList[i] == bot->GetGUID().GetRawValue())
+        {
+            if (g_BotDistFullDebugMode)
+            {
+                LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
 static void ClampAndBalanceBrackets()
 {
     // First, adjust Alliance brackets.
@@ -454,26 +477,6 @@ static bool IsBotSafeForLevelReset(Player* bot)
             }
         }
     }
-    // Lets ignore bots that have human friends
-    if (g_IgnoreFriendListed)
-    {   
-        for(auto i = 0; i < SocialFriendsList.size(); i++)      
-        {
-            if (g_BotDistFullDebugMode)
-            {
-                LOG_INFO("server.loading", "[BotLevelBrackets] Check bot {} against SocialFriendsList Array Character GUID {}", bot->GetName(), SocialFriendsList[i]);
-            }
-
-            if (SocialFriendsList[i] == bot->GetGUID().GetRawValue())
-            {
-                if (g_BotDistFullDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
-                }
-                return false;
-            }
-        }
-    }
 
     return true;
 }
@@ -504,7 +507,12 @@ static void ProcessPendingLevelResets()
         Player* bot = it->bot;
         int targetRange = it->targetRange;
         // If the bot is in a guild with a real player online and the option is enabled, remove it from pending resets.
-        if (g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
+        if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
+        {
+            it = g_PendingLevelResets.erase(it);
+            continue;
+        }
+        if (g_IgnoreFriendListed && BotInFriendList(bot))
         {
             it = g_PendingLevelResets.erase(it);
             continue;
@@ -830,9 +838,13 @@ public:
                 continue;
             }
             // If the bot is in a guild with a real player online and the option is enabled, skip it.
-            if (g_BotLevelBracketsIgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(player))
+            if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(player))
                 continue;
-
+            
+            // If the bot is a friend with a real player and the option is enabled, skip it.
+            if (g_IgnoreFriendListed && BotInFriendList(player))
+                continue;
+            
             if (IsAlliancePlayerBot(player))
             {
                 totalAllianceBots++;
