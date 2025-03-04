@@ -15,6 +15,9 @@
 #include <limits>
 #include <algorithm>
 #include "PlayerbotFactory.h"
+#include "DatabaseEnv.h"
+#include "QueryResult.h"
+
 
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
@@ -52,9 +55,13 @@ static uint32 g_BotDistFlaggedCheckFrequency = 15; // in seconds
 static bool   g_BotDistFullDebugMode      = false;
 static bool   g_BotDistLiteDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
+static bool   g_IgnoreFriendListed = true;
 
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
+
+// Array for character social list friends
+std::vector<int> SocialFriendsList;
 
 // -----------------------------------------------------------------------------
 // Loads the configuration from the config file.
@@ -71,6 +78,7 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
     g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.UseDynamicDistribution", false);
     g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.RealPlayerWeight", 1.0f);
+    g_IgnoreFriendListed = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreFriendListed", true);
 
     // Load the bot level restrictions.
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
@@ -99,6 +107,37 @@ static void LoadBotLevelBracketsConfig()
     g_HordeLevelRanges[8] = { 80, 80, static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range9Pct", 11)) };
 
     ClampAndBalanceBrackets();
+}
+
+// -----------------------------------------------------------------------------
+// Loads the friend guid(s) from character_social into array
+// ----------------------------------------------------------------------------- 
+static void LoadSocialFriendList()
+{
+    SocialFriendsList.clear();
+    QueryResult result = CharacterDatabase.Query("SELECT friend FROM character_social WHERE flags = 1");
+
+    if (!result)
+        return;
+
+    if (result->GetRowCount() == 0)
+        return;
+
+    if (g_BotDistFullDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Fetching Social Friend List GUIDs into array");
+    }
+
+    do
+    {
+        uint32 socialFriendGUID = result->Fetch()->Get<uint32>();
+        SocialFriendsList.push_back(socialFriendGUID);
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.load", "[BotLevelBrackets] Adding GUID {} to Social Friend List", socialFriendGUID);
+        }
+    } while (result->NextRow());
+
 }
 
 // Returns the index of the level range bracket that the given level belongs to.
@@ -415,6 +454,27 @@ static bool IsBotSafeForLevelReset(Player* bot)
             }
         }
     }
+    // Lets ignore bots that have human friends
+    if (g_IgnoreFriendListed)
+    {   
+        for(auto i = 0; i < SocialFriendsList.size(); i++)      
+        {
+            if (g_BotDistFullDebugMode)
+            {
+                LOG_INFO("server.loading", "[BotLevelBrackets] Check bot {} against SocialFriendsList Array Character GUID {}", bot->GetName(), SocialFriendsList[i]);
+            }
+
+            if (SocialFriendsList[i] == bot->GetGUID().GetRawValue())
+            {
+                if (g_BotDistFullDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
+                }
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -535,6 +595,7 @@ public:
     void OnStartup() override
     {
         LoadBotLevelBracketsConfig();
+        LoadSocialFriendList();
         if (!g_BotLevelBracketsEnabled)
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Module disabled via configuration.");
@@ -560,7 +621,7 @@ public:
     {
         if (!g_BotLevelBracketsEnabled)
             return;
-
+        
         m_timer += diff;
         m_flaggedTimer += diff;
 
@@ -570,7 +631,7 @@ public:
             if (g_BotDistFullDebugMode)
             {
                 LOG_INFO("server.loading", "[BotLevelBrackets] Pending Level Resets Triggering.");
-            }
+            }            
             ProcessPendingLevelResets();
             m_flaggedTimer = 0;
         }
@@ -579,6 +640,9 @@ public:
         if (m_timer < g_BotDistCheckFrequency * 1000)
             return;
         m_timer = 0;
+
+        // Refresh Social Friends List Array
+        LoadSocialFriendList();
 
         // Dynamic distribution: recalc desired percentages based on non-bot players.
         if (g_UseDynamicDistribution)
