@@ -13,46 +13,29 @@ The Bot Level Brackets module for AzerothCore ensures an even spread of player b
 Features
 --------
 - **Configurable Faction-Specific Level Brackets:**  
-  Define nine distinct level brackets for Alliance and Horde bots with configurable lower and upper bounds:
-  - 1-9, 10-19, 20-29, 30-39, 40-49, 50-59, 60-69, 70-79, 80
-
+  Define level brackets for Alliance and Horde bots with configurable lower and upper bounds.
 - **Desired Percentage Distribution:**  
-  Target percentages can be set for the number of bots within each level bracket. The sum of percentages for each faction must equal 100. If it does not, the system will balance out the remaining percentages automatically.
-
+  Specify a desired percentage for bots in each bracket. The percentages for each faction must sum to 100.
 - **Dynamic Bot Adjustment:**  
-  Bots in overpopulated brackets are automatically adjusted to a random level within a bracket with a deficit. Adjustments include resetting XP, removing equipped items, trade skills, learned spells, quests, and active auras, and dismissing pets.
-
+  Bots in overpopulated brackets are adjusted to a random level within a bracket with a deficit.
 - **Death Knight Level Safeguard:**  
-  Death Knight bots are enforced a minimum level of 55, ensuring they are only assigned to higher brackets.
-
-- **Support for Random Bots:**  
-  The module applies exclusively to bots managed by the RandomPlayerbotMgr.
-
-- **Dynamic Distribution Toggle:**  
-  Enable or disable the dynamic recalculation of bot distribution percentages based on the number of non-bot players in each level bracket via the `BotLevelBrackets.UseDynamicDistribution` option.
-
-- **Dynamic Real Player Weighting with Inverse Scaling:**  
-  When dynamic distribution is enabled, the module uses a configurable weight multiplier (set via `BotLevelBrackets.RealPlayerWeight`) to boost each real player's contribution to the desired distribution. This weight is further scaled inversely by the total number of real players online, ensuring that when few players are active, each player's impact on the bot distribution is significantly increased.  
-  **Note:** The `RealPlayerWeight` option only takes effect when `BotLevelBrackets.UseDynamicDistribution` is enabled.
-
+  Death Knight bots are enforced a minimum level of 55.
 - **Guild Bot Exclusion:**  
-  When enabled via the new configuration option `BotLevelBrackets.IgnoreGuildBotsWithRealPlayers` (default enabled), bots that are in a guild with at least one real (non-bot) player online are excluded from bot bracket calculations. These bots are not counted in the totals, nor are they subject to level changes or flagged for pending reset.
- > **NOTE:** At this time Guild Bot Exclusion only works with **online** real players. I'm investigating how to accomplish the same thing even if the real player is offline.
+  When enabled, bots that are in a guild with at least one real (non-bot) player online are excluded from bot bracket calculations and will not be adjusted.
+- **Friend List Exclusion:**  
+  When enabled, bots that are on real players' friend lists are excluded from level bracket adjustments.
+- **Dynamic Distribution:**  
+  Optionally enable dynamic recalculation of bot distribution percentages based on the number of non-bot players present in each bracket.
+- **Debug Modes:**  
+  Full and Lite debug modes provide detailed logging for troubleshooting and monitoring bot adjustments.
 
-- **Debug Mode:**  
-  Optional debug modes (full and lite) provide detailed logging for monitoring bot adjustments and troubleshooting module operations.
+Minimum and Maximum Bot Level Support
+----------------------------------------
+This module supports setting minimum and maximum levels for random bots via Playerbots options:
+- **AiPlayerbot.RandomBotMinLevel:** Default is 1.
+- **AiPlayerbot.RandomBotMaxLevel:** Default is 80.
 
-### Minimum and Maximum Bot Level Support
-
-This module now supports setting a minimum and maximum level for random bots via the Playerbots `playerbots.conf` options:
-
-- **AiPlayerbot.RandomBotMinLevel:**  
-  Sets the minimum level allowed for random bots. The default value is 1.
-
-- **AiPlayerbot.RandomBotMaxLevel:**  
-  Sets the maximum level allowed for random bots. The default value is 80.
-
-> **Warning:** If you configure the maximum bot level to a value below 55, ensure that Death Knight bots are disabled. The module enforces a minimum level of 55 for Death Knight bots; therefore, setting the maximum level under 55 would conflict with this safeguard and could lead to unintended behavior and Death Knight bots not moving brackets.
+> **Warning:** If you configure the maximum bot level to a value below 55, ensure that Death Knight bots are disabled.
 
 Installation
 ------------
@@ -82,7 +65,7 @@ Installation
 
 Configuration Options
 ---------------------
-Customize the module’s behavior by editing the `mod_player_bot_level_brackets.conf` file. The configuration options are separated for Alliance and Horde bots:
+Customize the module’s behavior by editing the `mod_player_bot_level_brackets.conf` file. The configuration options are split into global settings and faction-specific level bracket settings.
 
 ### Global Settings
 
@@ -93,48 +76,128 @@ BotLevelBrackets.FullDebugMode               | Enables full debug logging for th
 BotLevelBrackets.LiteDebugMode               | Enables lite debug logging for the Bot Level Brackets module.                                                                    | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.CheckFrequency              | Frequency (in seconds) at which the bot level distribution check is performed.                                                  | 300     | Positive Integer
 BotLevelBrackets.CheckFlaggedFrequency       | Frequency (in seconds) at which the bot level reset is performed for flagged bots that initially failed safety checks.             | 15      | Positive Integer
-BotLevelBrackets.UseDynamicDistribution      | Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players present in each bracket.      | 0       | 0 (off) / 1 (on)
-BotLevelBrackets.RealPlayerWeight            | Multiplier applied to each real player's contribution in their level bracket. **Active only if dynamic distribution is enabled.** | 1.0     | Floating point number
-**BotLevelBrackets.IgnoreGuildBotsWithRealPlayers** | When enabled, bots in a guild with at least one real (non-bot) player online are excluded from bot bracket calculations and will not be level changed or flagged. | 1       | 0 (disabled) / 1 (enabled)
+BotLevelBrackets.UseDynamicDistribution      | Enables dynamic recalculation of bot distribution percentages based on non-bot player counts per bracket.                        | 0       | 0 (off) / 1 (on)
+BotLevelBrackets.RealPlayerWeight            | Multiplier applied to each real player's contribution (active only if dynamic distribution is enabled).                          | 1.0     | Floating point number
+BotLevelBrackets.IgnoreFriendListed           | Ignores bots that are on real players' friend lists from any bracket calculations.                                              | 1       | 0 (off) / 1 (on)
+BotLevelBrackets.IgnoreGuildBotsWithRealPlayers | Excludes bots in a guild with at least one real (non-bot) player online from adjustments.                                       | 1       | 0 (disabled) / 1 (enabled)
+BotLevelBrackets.NumRanges                     | Number of level brackets used for bot distribution. Both factions must have the same number defined.                             | 9       | Positive Integer
+
+**IMPORTANT:** If you extend the number of brackets beyond the default 9, you must update both your `mod_player_bot_level_brackets.conf` file and the accompanying `mod_player_bot_level_brackets.conf.dist` file to include configuration lines for the additional ranges (e.g. Range10, Range11, etc.), ensuring that the sum of the Pct values remains 100.
 
 ### Alliance Level Brackets Configuration
 *The percentages below must sum to 100.*
 
-Setting                                     | Description                                                   | Default | Valid Values
---------------------------------------------|---------------------------------------------------------------|---------|--------------------
-BotLevelBrackets.Alliance.Range1Pct          | Desired percentage of Alliance bots within level range 1-9.    | 12      | 0-100
-BotLevelBrackets.Alliance.Range2Pct          | Desired percentage of Alliance bots within level range 10-19.  | 11      | 0-100
-BotLevelBrackets.Alliance.Range3Pct          | Desired percentage of Alliance bots within level range 20-29.  | 11      | 0-100
-BotLevelBrackets.Alliance.Range4Pct          | Desired percentage of Alliance bots within level range 30-39.  | 11      | 0-100
-BotLevelBrackets.Alliance.Range5Pct          | Desired percentage of Alliance bots within level range 40-49.  | 11      | 0-100
-BotLevelBrackets.Alliance.Range6Pct          | Desired percentage of Alliance bots within level range 50-59.  | 11      | 0-100
-BotLevelBrackets.Alliance.Range7Pct          | Desired percentage of Alliance bots within level range 60-69.  | 11      | 0-100
-BotLevelBrackets.Alliance.Range8Pct          | Desired percentage of Alliance bots within level range 70-79.  | 11      | 0-100
-BotLevelBrackets.Alliance.Range9Pct          | Desired percentage of Alliance bots at level 80.               | 11      | 0-100
+For each bracket, define:
+
+- **BotLevelBrackets.Alliance.RangeX.Lower:**  
+  The lower bound (inclusive) of bracket X.
+  
+- **BotLevelBrackets.Alliance.RangeX.Upper:**  
+  The upper bound (inclusive) of bracket X.
+  
+- **BotLevelBrackets.Alliance.RangeX.Pct:**  
+  The desired percentage of Alliance bots that should fall into bracket X.
+
+**EXAMPLE:**  
+The default configuration below defines 9 brackets:
+- Range1 covers levels 1–9  
+  `BotLevelBrackets.Alliance.Range1.Lower = 1`  
+  `BotLevelBrackets.Alliance.Range1.Upper = 9`  
+  `BotLevelBrackets.Alliance.Range1.Pct   = 12`
+- Range2 covers levels 10–19  
+  `BotLevelBrackets.Alliance.Range2.Lower = 10`  
+  `BotLevelBrackets.Alliance.Range2.Upper = 19`  
+  `BotLevelBrackets.Alliance.Range2.Pct   = 11`
+- Range3 covers levels 20–29  
+  `BotLevelBrackets.Alliance.Range3.Lower = 20`  
+  `BotLevelBrackets.Alliance.Range3.Upper = 29`  
+  `BotLevelBrackets.Alliance.Range3.Pct   = 11`
+- Range4 covers levels 30–39  
+  `BotLevelBrackets.Alliance.Range4.Lower = 30`  
+  `BotLevelBrackets.Alliance.Range4.Upper = 39`  
+  `BotLevelBrackets.Alliance.Range4.Pct   = 11`
+- Range5 covers levels 40–49  
+  `BotLevelBrackets.Alliance.Range5.Lower = 40`  
+  `BotLevelBrackets.Alliance.Range5.Upper = 49`  
+  `BotLevelBrackets.Alliance.Range5.Pct   = 11`
+- Range6 covers levels 50–59  
+  `BotLevelBrackets.Alliance.Range6.Lower = 50`  
+  `BotLevelBrackets.Alliance.Range6.Upper = 59`  
+  `BotLevelBrackets.Alliance.Range6.Pct   = 11`
+- Range7 covers levels 60–69  
+  `BotLevelBrackets.Alliance.Range7.Lower = 60`  
+  `BotLevelBrackets.Alliance.Range7.Upper = 69`  
+  `BotLevelBrackets.Alliance.Range7.Pct   = 11`
+- Range8 covers levels 70–79  
+  `BotLevelBrackets.Alliance.Range8.Lower = 70`  
+  `BotLevelBrackets.Alliance.Range8.Upper = 79`  
+  `BotLevelBrackets.Alliance.Range8.Pct   = 11`
+- Range9 covers level 80 only  
+  `BotLevelBrackets.Alliance.Range9.Lower = 80`  
+  `BotLevelBrackets.Alliance.Range9.Upper = 80`  
+  `BotLevelBrackets.Alliance.Range9.Pct   = 11`
+
+To isolate a specific level (e.g., level 60) into its own bracket, set the Lower and Upper for that range to the same value (e.g., 60) and adjust the adjacent ranges accordingly.
 
 ### Horde Level Brackets Configuration
 *The percentages below must sum to 100.*
 
-Setting                                    | Description                                                   | Default | Valid Values
--------------------------------------------|---------------------------------------------------------------|---------|--------------------
-BotLevelBrackets.Horde.Range1Pct            | Desired percentage of Horde bots within level range 1-9.      | 12      | 0-100
-BotLevelBrackets.Horde.Range2Pct            | Desired percentage of Horde bots within level range 10-19.    | 11      | 0-100
-BotLevelBrackets.Horde.Range3Pct            | Desired percentage of Horde bots within level range 20-29.    | 11      | 0-100
-BotLevelBrackets.Horde.Range4Pct            | Desired percentage of Horde bots within level range 30-39.    | 11      | 0-100
-BotLevelBrackets.Horde.Range5Pct            | Desired percentage of Horde bots within level range 40-49.    | 11      | 0-100
-BotLevelBrackets.Horde.Range6Pct            | Desired percentage of Horde bots within level range 50-59.    | 11      | 0-100
-BotLevelBrackets.Horde.Range7Pct            | Desired percentage of Horde bots within level range 60-69.    | 11      | 0-100
-BotLevelBrackets.Horde.Range8Pct            | Desired percentage of Horde bots within level range 70-79.    | 11      | 0-100
-BotLevelBrackets.Horde.Range9Pct            | Desired percentage of Horde bots at level 80.                 | 11      | 0-100
+For each bracket, define:
+
+- **BotLevelBrackets.Horde.RangeX.Lower:**  
+  The lower bound (inclusive) of bracket X.
+  
+- **BotLevelBrackets.Horde.RangeX.Upper:**  
+  The upper bound (inclusive) of bracket X.
+  
+- **BotLevelBrackets.Horde.RangeX.Pct:**  
+  The desired percentage of Horde bots that should fall into bracket X.
+
+**EXAMPLE:**  
+The default configuration below defines 9 brackets:
+- Range1 covers levels 1–9  
+  `BotLevelBrackets.Horde.Range1.Lower = 1`  
+  `BotLevelBrackets.Horde.Range1.Upper = 9`  
+  `BotLevelBrackets.Horde.Range1.Pct   = 12`
+- Range2 covers levels 10–19  
+  `BotLevelBrackets.Horde.Range2.Lower = 10`  
+  `BotLevelBrackets.Horde.Range2.Upper = 19`  
+  `BotLevelBrackets.Horde.Range2.Pct   = 11`
+- Range3 covers levels 20–29  
+  `BotLevelBrackets.Horde.Range3.Lower = 20`  
+  `BotLevelBrackets.Horde.Range3.Upper = 29`  
+  `BotLevelBrackets.Horde.Range3.Pct   = 11`
+- Range4 covers levels 30–39  
+  `BotLevelBrackets.Horde.Range4.Lower = 30`  
+  `BotLevelBrackets.Horde.Range4.Upper = 39`  
+  `BotLevelBrackets.Horde.Range4.Pct   = 11`
+- Range5 covers levels 40–49  
+  `BotLevelBrackets.Horde.Range5.Lower = 40`  
+  `BotLevelBrackets.Horde.Range5.Upper = 49`  
+  `BotLevelBrackets.Horde.Range5.Pct   = 11`
+- Range6 covers levels 50–59  
+  `BotLevelBrackets.Horde.Range6.Lower = 50`  
+  `BotLevelBrackets.Horde.Range6.Upper = 59`  
+  `BotLevelBrackets.Horde.Range6.Pct   = 11`
+- Range7 covers levels 60–69  
+  `BotLevelBrackets.Horde.Range7.Lower = 60`  
+  `BotLevelBrackets.Horde.Range7.Upper = 69`  
+  `BotLevelBrackets.Horde.Range7.Pct   = 11`
+- Range8 covers levels 70–79  
+  `BotLevelBrackets.Horde.Range8.Lower = 70`  
+  `BotLevelBrackets.Horde.Range8.Upper = 79`  
+  `BotLevelBrackets.Horde.Range8.Pct   = 11`
+- Range9 covers level 80 only  
+  `BotLevelBrackets.Horde.Range9.Lower = 80`  
+  `BotLevelBrackets.Horde.Range9.Upper = 80`  
+  `BotLevelBrackets.Horde.Range9.Pct   = 11`
 
 Debugging
 ---------
-To enable detailed debug logging, update the configuration file:
+To enable detailed debug logging, update the configuration file with one of the following:
 
     BotLevelBrackets.FullDebugMode = 1
     BotLevelBrackets.LiteDebugMode = 1
-
-Choose one of these debug modes to output logs detailing bot level adjustments, percentages, and distribution to the server console.
 
 Troubleshooting
 ---------------
