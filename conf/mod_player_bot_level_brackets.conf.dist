@@ -45,22 +45,6 @@ BotLevelBrackets.CheckFlaggedFrequency = 15
 BotLevelBrackets.IgnoreGuildBotsWithRealPlayers = 1
 
 #
-#    BotLevelBrackets.UseDynamicDistribution
-#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players 
-#                     present in each level bracket.
-#        Default:     0 (disabled)
-#                     Valid values: 0 (off) / 1 (on)
-BotLevelBrackets.UseDynamicDistribution = 0
-
-#
-#    BotLevelBrackets.RealPlayerWeight
-#        Description: A multiplier applied to each real player's contribution in their level bracket.
-#                     When combined with inverse scaling by total player count, a higher value significantly boosts the effective weight
-#                     of a real player when few are online.
-#        Default:     1.0
-BotLevelBrackets.RealPlayerWeight = 1.0
-
-#
 #    BotLevelBrackets.IgnoreFriendListed
 #         Description: Ignore bots that are on real players friend's lists from any brackets.
 #         Default:     1 (enabled)
@@ -78,6 +62,32 @@ BotLevelBrackets.IgnoreFriendListed = 1
 #            lines for the additional bracket lines added below (e.g. Range10, Range11, etc.). Ensure that the
 #            sum of the Pct values for each faction remains 100.
 BotLevelBrackets.NumRanges = 9
+
+#
+#    BotLevelBrackets.Dynamic.UseDynamicDistribution
+#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players 
+#                     present in each level bracket.
+#        Default:     0 (disabled)
+#                     Valid values: 0 (off) / 1 (on)
+BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
+
+#
+#    BotLevelBrackets.Dynamic.RealPlayerWeight
+#        Description: A multiplier applied to each real player's contribution in their level bracket.
+#                     When combined with inverse scaling by total player count, a higher value significantly boosts the effective weight
+#                     of a real player when few are online.
+#        Default:     1.0
+BotLevelBrackets.Dynamic.RealPlayerWeight = 1.0
+
+#
+#    BotLevelBrackets.Dynamic.SyncFactions
+#        Description: If enabled, both Alliance and Horde must have identical bracket definitions (same number, same level bounds).
+#                     All real players (regardless of faction) influence the dynamic distribution for both factions.
+#        Default:     0 (disabled)
+#   Valid values:     0 (off) / 1 (on)
+#        WARNING: Server will fail to start if brackets do not match when enabled.
+#
+BotLevelBrackets.Dynamic.SyncFactions = 0
 
 ##############################################
 # Alliance Level Brackets Configuration

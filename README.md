@@ -26,6 +26,8 @@ Features
   When enabled, bots that are on real players' friend lists are excluded from level bracket adjustments.
 - **Dynamic Distribution:**  
   Optionally enable dynamic recalculation of bot distribution percentages based on the number of non-bot players present in each bracket.
+- **Sync Factions Bracket:** 
+  Requires Dynamic Distribution to be on. Optionally enable synchronized bracket and weighting logic between Alliance and Horde. When enabled, both bracket range definitions must match exactly for both factions and real player activity from either faction influences bot bracket distribution for both factions.
 - **Debug Modes:**  
   Full and Lite debug modes provide detailed logging for troubleshooting and monitoring bot adjustments.
 
@@ -76,8 +78,9 @@ BotLevelBrackets.FullDebugMode               | Enables full debug logging for th
 BotLevelBrackets.LiteDebugMode               | Enables lite debug logging for the Bot Level Brackets module.                                                                    | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.CheckFrequency              | Frequency (in seconds) at which the bot level distribution check is performed.                                                  | 300     | Positive Integer
 BotLevelBrackets.CheckFlaggedFrequency       | Frequency (in seconds) at which the bot level reset is performed for flagged bots that initially failed safety checks.             | 15      | Positive Integer
-BotLevelBrackets.UseDynamicDistribution      | Enables dynamic recalculation of bot distribution percentages based on non-bot player counts per bracket.                        | 0       | 0 (off) / 1 (on)
-BotLevelBrackets.RealPlayerWeight            | Multiplier applied to each real player's contribution (active only if dynamic distribution is enabled).                          | 1.0     | Floating point number
+BotLevelBrackets.Dynamic.UseDynamicDistribution      | Enables dynamic recalculation of bot distribution percentages based on non-bot player counts per bracket.                        | 0       | 0 (off) / 1 (on)
+BotLevelBrackets.Dynamic.RealPlayerWeight            | Multiplier applied to each real player's contribution (active only if dynamic distribution is enabled).                          | 1.0     | Floating point number
+BotLevelBrackets.Dynamic.SyncFactions      | Enables synchronized brackets and weighting between Alliance and Horde factions when Dynamic Distribution is also enabled.                        | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.IgnoreFriendListed           | Ignores bots that are on real players' friend lists from any bracket calculations.                                              | 1       | 0 (off) / 1 (on)
 BotLevelBrackets.IgnoreGuildBotsWithRealPlayers | Excludes bots in a guild with at least one real (non-bot) player online from adjustments.                                       | 1       | 0 (disabled) / 1 (enabled)
 BotLevelBrackets.NumRanges                     | Number of level brackets used for bot distribution. Both factions must have the same number defined.                             | 9       | Positive Integer

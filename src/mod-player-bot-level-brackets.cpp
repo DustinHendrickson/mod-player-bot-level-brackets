@@ -42,9 +42,9 @@ static uint8 g_NumRanges = 9;
 static uint8 g_RandomBotMinLevel = 1;
 static uint8 g_RandomBotMaxLevel = 80;
 
-// New configuration option to enable/disable the mod. Default is true.
+// Enable/disable the mod. Default is true.
 static bool g_BotLevelBracketsEnabled = true;
-// New configuration option to ignore bots in guilds with a real player online. Default is true.
+// Ignore bots in guilds with a real player online. Default is true.
 static bool g_IgnoreGuildBotsWithRealPlayers = true;
 
 // Use vectors to store the level ranges.
@@ -61,6 +61,11 @@ static bool   g_IgnoreFriendListed = true;
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
 
+// If true, synchronize bracket logic and real player influence across both factions.
+// This option requires both Alliance and Horde bracket definitions to match perfectly.
+// When enabled, all real players (regardless of faction) affect the dynamic distribution for both factions.
+static bool g_SyncFactions = false;
+
 // Array for character social list friends
 std::vector<int> SocialFriendsList;
 
@@ -76,8 +81,9 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistLiteDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.LiteDebugMode", false);
     g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFrequency", 300);
     g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
-    g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.UseDynamicDistribution", false);
-    g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.RealPlayerWeight", 1.0f);
+    g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.Dynamic.UseDynamicDistribution", false);
+    g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.Dynamic.RealPlayerWeight", 1.0f);
+    g_SyncFactions = sConfigMgr->GetOption<bool>("BotLevelBrackets.Dynamic.SyncFactions", false);
     g_IgnoreFriendListed = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreFriendListed", true);
 
     // Load the bot level restrictions.
@@ -105,6 +111,23 @@ static void LoadBotLevelBracketsConfig()
         g_HordeLevelRanges[i].lower = static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range" + idx + ".Lower", (i == 0 ? 1 : i * 10)));
         g_HordeLevelRanges[i].upper = static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range" + idx + ".Upper", (i < g_NumRanges - 1 ? i * 10 + 9 : g_RandomBotMaxLevel)));
         g_HordeLevelRanges[i].desiredPercent = static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range" + idx + ".Pct", 11));
+    }
+
+    // If SyncFactions is enabled, ensure bracket definitions match exactly for both factions.
+    // Any mismatch results in immediate server shutdown with an error message.
+    if (g_SyncFactions) {
+        for (uint8 i = 0; i < g_NumRanges; ++i) {
+            if (g_AllianceLevelRanges[i].lower != g_HordeLevelRanges[i].lower ||
+                g_AllianceLevelRanges[i].upper != g_HordeLevelRanges[i].upper) {
+                LOG_ERROR("server.loading", "[BotLevelBrackets] FATAL: Bracket mismatch detected between factions at index {}. "
+                    "Alliance: {}-{}, Horde: {}-{}. "
+                    "When SyncFactions is enabled, both bracket number and min/max levels must match exactly. "
+                    "Check your configuration.", 
+                    i, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, 
+                    g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper);
+                std::terminate();
+            }
+        }
     }
 
     ClampAndBalanceBrackets();
@@ -687,26 +710,22 @@ public:
 
         if (g_UseDynamicDistribution)
         {
+            // Calculate real player bracket counts
             std::vector<int> allianceRealCounts(g_NumRanges, 0);
             std::vector<int> hordeRealCounts(g_NumRanges, 0);
             uint32 totalAllianceReal = 0;
             uint32 totalHordeReal = 0;
+
             for (auto const& itr : ObjectAccessor::GetPlayers())
             {
                 Player* player = itr.second;
                 if (!player || !player->IsInWorld())
-                {
                     continue;
-                }
                 if (IsPlayerBot(player))
-                {
-                    continue; // Skip bots.
-                }
+                    continue; // Only count real players.
                 int rangeIndex = GetOrFlagPlayerBracket(player);
                 if (rangeIndex < 0)
-                {
                     continue;
-                }
                 if (player->GetTeamId() == TEAM_ALLIANCE)
                 {
                     allianceRealCounts[rangeIndex]++;
@@ -718,127 +737,89 @@ public:
                     totalHordeReal++;
                 }
             }
+
             const float baseline = 1.0f;
             std::vector<float> allianceWeights(g_NumRanges, 0.0f);
             std::vector<float> hordeWeights(g_NumRanges, 0.0f);
-            float allianceTotalWeight = 0.0f;
-            float hordeTotalWeight = 0.0f;
-            for (int i = 0; i < g_NumRanges; ++i)
+
+            // SYNCED MODE: Real player weighting is combined for both factions, applied to both bracket tables.
+            if (g_SyncFactions)
             {
-                if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
+                uint32 totalCombinedReal = totalAllianceReal + totalHordeReal;
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    allianceWeights[i] = 0.0f;
+                    int combinedReal = allianceRealCounts[i] + hordeRealCounts[i];
+                    float weight = baseline + g_RealPlayerWeight *
+                        (totalCombinedReal > 0 ? (1.0f / float(totalCombinedReal)) : 1.0f) *
+                        log(1 + combinedReal);
+                    allianceWeights[i] = weight;
+                    hordeWeights[i] = weight;
                 }
-                else
-                {
-                    allianceWeights[i] = baseline + g_RealPlayerWeight *
-                        (totalAllianceReal > 0 ? (1.0f / totalAllianceReal) : 1.0f) *
-                        log(1 + allianceRealCounts[i]);
-                }
-
-                if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
-                {
-                    hordeWeights[i] = 0.0f;
-                }
-                else
-                {
-                    hordeWeights[i] = baseline + g_RealPlayerWeight *
-                        (totalHordeReal > 0 ? (1.0f / totalHordeReal) : 1.0f) *
-                        log(1 + hordeRealCounts[i]);
-                }
-
-                allianceTotalWeight += allianceWeights[i];
-                hordeTotalWeight += hordeWeights[i];
             }
-            for (int i = 0; i < g_NumRanges; ++i)
+            else
             {
-                g_AllianceLevelRanges[i].desiredPercent = static_cast<uint8>(round((allianceWeights[i] / allianceTotalWeight) * 100));
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+                // Separate dynamic weighting for each faction
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Dynamic Distribution - Alliance Range {}: {}-{}, Real Players: {} (weight: {:.2f}), New Desired: {}%",
-                             i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, allianceRealCounts[i], allianceWeights[i], g_AllianceLevelRanges[i].desiredPercent);
+                    if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
+                        allianceWeights[i] = 0.0f;
+                    else
+                        allianceWeights[i] = baseline + g_RealPlayerWeight *
+                            (totalAllianceReal > 0 ? (1.0f / totalAllianceReal) : 1.0f) *
+                            log(1 + allianceRealCounts[i]);
+
+                    if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
+                        hordeWeights[i] = 0.0f;
+                    else
+                        hordeWeights[i] = baseline + g_RealPlayerWeight *
+                            (totalHordeReal > 0 ? (1.0f / totalHordeReal) : 1.0f) *
+                            log(1 + hordeRealCounts[i]);
                 }
             }
 
-            uint8 sumAlliance = 0;
-            for (int i = 0; i < g_NumRanges; ++i)
+            // Helper for normalizing weights so percentages sum to 100
+            auto applyWeights = [](std::vector<LevelRangeConfig>& ranges, const std::vector<float>& weights)
             {
-                sumAlliance += g_AllianceLevelRanges[i].desiredPercent;
-            }
-            if (sumAlliance < 100 && allianceTotalWeight > 0)
-            {
-                uint8 missing = 100 - sumAlliance;
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+                float total = 0.0f;
+                for (int i = 0; i < g_NumRanges; ++i)
+                    total += weights[i];
+                int pctSum = 0;
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance normalization: current sum = {}, missing = {}", sumAlliance, missing);
+                    uint8 pct = (total > 0.0f) ? static_cast<uint8>(round((weights[i] / total) * 100)) : 0;
+                    ranges[i].desiredPercent = pct;
+                    pctSum += pct;
                 }
-                while (missing > 0)
+                // Fix rounding drift so sum = 100
+                int missing = 100 - pctSum;
+                for (int i = 0; i < g_NumRanges && missing > 0; ++i)
                 {
-                    for (int i = 0; i < g_NumRanges && missing > 0; ++i)
+                    if (ranges[i].lower <= ranges[i].upper && ranges[i].desiredPercent > 0)
                     {
-                        if (g_AllianceLevelRanges[i].lower <= g_AllianceLevelRanges[i].upper && allianceWeights[i] > 0)
-                        {
-                            g_AllianceLevelRanges[i].desiredPercent++;
-                            missing--;
-                        }
+                        ranges[i].desiredPercent++;
+                        missing--;
                     }
                 }
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance normalized percentages:");
-                    for (int i = 0; i < g_NumRanges; ++i)
-                    {
-                        LOG_INFO("server.loading", "    Range {}: {}% ({}-{})", i + 1, g_AllianceLevelRanges[i].desiredPercent,
-                                 g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper);
-                    }
-                }
-            }
-            
-            for (int i = 0; i < g_NumRanges; ++i)
-            {
-                g_HordeLevelRanges[i].desiredPercent = static_cast<uint8>(round((hordeWeights[i] / hordeTotalWeight) * 100));
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Dynamic Distribution - Horde Range {}: {}-{}, Real Players: {} (weight: {:.2f}), New Desired: {}%",
-                             i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper, hordeRealCounts[i], hordeWeights[i], g_HordeLevelRanges[i].desiredPercent);
-                }
-            }
+            };
 
-            uint8 sumHorde = 0;
-            for (int i = 0; i < g_NumRanges; ++i)
+            applyWeights(g_AllianceLevelRanges, allianceWeights);
+            applyWeights(g_HordeLevelRanges, hordeWeights);
+
+            // Debug output for new bracket percentages after normalization
+            if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
             {
-                sumHorde += g_HordeLevelRanges[i].desiredPercent;
-            }
-            if (sumHorde < 100 && hordeTotalWeight > 0)
-            {
-                uint8 missing = 100 - sumHorde;
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Horde normalization: current sum = {}, missing = {}", sumHorde, missing);
-                }
-                while (missing > 0)
-                {
-                    for (int i = 0; i < g_NumRanges && missing > 0; ++i)
-                    {
-                        if (g_HordeLevelRanges[i].lower <= g_HordeLevelRanges[i].upper && hordeWeights[i] > 0)
-                        {
-                            g_HordeLevelRanges[i].desiredPercent++;
-                            missing--;
-                        }
-                    }
-                }
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Horde normalized percentages:");
-                    for (int i = 0; i < g_NumRanges; ++i)
-                    {
-                        LOG_INFO("server.loading", "    Range {}: {}% ({}-{})", i + 1, g_HordeLevelRanges[i].desiredPercent,
-                                 g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper);
-                    }
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Final Range {}: {}-{}, Alliance Desired: {}%, Horde Desired: {}%",
+                        i + 1,
+                        g_AllianceLevelRanges[i].lower,
+                        g_AllianceLevelRanges[i].upper,
+                        g_AllianceLevelRanges[i].desiredPercent,
+                        g_HordeLevelRanges[i].desiredPercent);
                 }
             }
         }
-
+        
         uint32 totalAllianceBots = 0;
         std::vector<int> allianceActualCounts(g_NumRanges, 0);
         std::vector< std::vector<Player*> > allianceBotsByRange(g_NumRanges);
