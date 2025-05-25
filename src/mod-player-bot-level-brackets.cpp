@@ -57,7 +57,7 @@ static bool   g_BotDistFullDebugMode      = false;
 static bool   g_BotDistLiteDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
 static bool   g_IgnoreFriendListed = true;
-static uint32 g_FlaggedProcessLimit = 0; // 0 = unlimited
+static uint32 g_FlaggedProcessLimit = 5; // 0 = unlimited
 
 
 // Real player weight to boost bracket contributions.
@@ -87,7 +87,7 @@ static void LoadBotLevelBracketsConfig()
     g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.Dynamic.RealPlayerWeight", 1.0f);
     g_SyncFactions = sConfigMgr->GetOption<bool>("BotLevelBrackets.Dynamic.SyncFactions", false);
     g_IgnoreFriendListed = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreFriendListed", true);
-    g_FlaggedProcessLimit = sConfigMgr->GetOption<uint32>("BotLevelBrackets.FlaggedProcessLimit", 0);
+    g_FlaggedProcessLimit = sConfigMgr->GetOption<uint32>("BotLevelBrackets.FlaggedProcessLimit", 5);
 
     // Load the bot level restrictions.
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
@@ -1008,7 +1008,6 @@ public:
                         LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting alliance bot '{}' from range {} to range {} ({}-{}).",  
                                  bot->GetName(), i + 1, targetRange + 1, g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                     }
-                    //AdjustBotToRange(bot, targetRange, g_AllianceLevelRanges.data());
                     bool alreadyFlagged = false;
                     for (auto& entry : g_PendingLevelResets)
                     {
@@ -1177,7 +1176,6 @@ public:
                         LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting horde bot '{}' from range {} to range {} ({}-{}).", 
                                  bot->GetName(), i + 1, targetRange + 1, g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                     }
-                    //AdjustBotToRange(bot, targetRange, g_HordeLevelRanges.data());
                     bool alreadyFlagged = false;
                     for (auto& entry : g_PendingLevelResets)
                     {
