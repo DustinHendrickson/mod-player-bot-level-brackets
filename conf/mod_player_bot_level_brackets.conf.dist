@@ -32,9 +32,15 @@ BotLevelBrackets.CheckFrequency = 300
 
 #
 #    BotLevelBrackets.CheckFlaggedFrequency
-#        Description: The frequency (in seconds) at which the bot level reset is performed for flagged bots that failed safety checks initially.
-#        Default:     15
+#        Description: The frequency (in seconds) at which the bot level reset is performed for processing safe bots and checking flagged bots that failed safety checks initially.
+#        Default:    15
 BotLevelBrackets.CheckFlaggedFrequency = 15
+
+#    BotLevelBrackets.FlaggedProcessLimit
+#        Description: Maximum number of flagged bots to process per flagged check step.
+#                     0 = unlimited (process all flagged bots each step)
+#        Default:     5
+BotLevelBrackets.FlaggedProcessLimit = 5
 
 #
 #    BotLevelBrackets.IgnoreGuildBotsWithRealPlayers
