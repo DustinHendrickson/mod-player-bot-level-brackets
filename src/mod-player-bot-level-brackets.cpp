@@ -57,6 +57,8 @@ static bool   g_BotDistFullDebugMode      = false;
 static bool   g_BotDistLiteDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
 static bool   g_IgnoreFriendListed = true;
+static uint32 g_FlaggedProcessLimit = 0; // 0 = unlimited
+
 
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
@@ -85,6 +87,7 @@ static void LoadBotLevelBracketsConfig()
     g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.Dynamic.RealPlayerWeight", 1.0f);
     g_SyncFactions = sConfigMgr->GetOption<bool>("BotLevelBrackets.Dynamic.SyncFactions", false);
     g_IgnoreFriendListed = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreFriendListed", true);
+    g_FlaggedProcessLimit = sConfigMgr->GetOption<uint32>("BotLevelBrackets.FlaggedProcessLimit", 0);
 
     // Load the bot level restrictions.
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
@@ -360,10 +363,6 @@ static bool BotInFriendList(Player* bot)
 
     for (size_t i = 0; i < SocialFriendsList.size(); ++i)
     {
-        if (g_BotDistFullDebugMode)
-        {
-            LOG_INFO("server.loading", "[BotLevelBrackets] Check bot {} against SocialFriendsList Array Character GUID {}", bot->GetName(), SocialFriendsList[i]);
-        }
         if (SocialFriendsList[i] == bot->GetGUID().GetRawValue())
         {
             if (g_BotDistFullDebugMode)
@@ -547,34 +546,40 @@ static void ProcessPendingLevelResets()
         return;
     }
 
+    // Limit the number of resets processed in one cycle if configured.
+    uint32 processed = 0;
     for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end(); )
-    {
-        Player* bot = it->bot;
-        int targetRange = it->targetRange;
-        if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
         {
-            it = g_PendingLevelResets.erase(it);
-            continue;
-        }
-        if (g_IgnoreFriendListed && BotInFriendList(bot))
-        {
-            it = g_PendingLevelResets.erase(it);
-            continue;
-        }
-        if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
-        {
-            AdjustBotToRange(bot, targetRange, it->factionRanges);
-            if (g_BotDistFullDebugMode)
+            if (g_FlaggedProcessLimit > 0 && processed >= g_FlaggedProcessLimit)
+                break;
+
+            Player* bot = it->bot;
+            int targetRange = it->targetRange;
+            if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
             {
-                LOG_INFO("server.loading", "[BotLevelBrackets] Bot '{}' successfully reset to level range {}-{}.", bot->GetName(), it->factionRanges[targetRange].lower, it->factionRanges[targetRange].upper);
+                it = g_PendingLevelResets.erase(it);
+                continue;
             }
-            it = g_PendingLevelResets.erase(it);
+            if (g_IgnoreFriendListed && BotInFriendList(bot))
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+            if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
+            {
+                AdjustBotToRange(bot, targetRange, it->factionRanges);
+                if (g_BotDistFullDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Bot '{}' successfully reset to level range {}-{}.", bot->GetName(), it->factionRanges[targetRange].lower, it->factionRanges[targetRange].upper);
+                }
+                it = g_PendingLevelResets.erase(it);
+                ++processed;
+            }
+            else
+            {
+                ++it;
+            }
         }
-        else
-        {
-            ++it;
-        }
-    }
 }
 
 // This function returns a valid bracket index for the given player's level.
@@ -1003,7 +1008,25 @@ public:
                         LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting alliance bot '{}' from range {} to range {} ({}-{}).",  
                                  bot->GetName(), i + 1, targetRange + 1, g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                     }
-                    AdjustBotToRange(bot, targetRange, g_AllianceLevelRanges.data());
+                    //AdjustBotToRange(bot, targetRange, g_AllianceLevelRanges.data());
+                    bool alreadyFlagged = false;
+                    for (auto& entry : g_PendingLevelResets)
+                    {
+                        if (entry.bot == bot)
+                        {
+                            alreadyFlagged = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyFlagged)
+                    {
+                        g_PendingLevelResets.push_back({bot, targetRange, g_AllianceLevelRanges.data()});
+                        if (g_BotDistFullDebugMode)
+                        {
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.", 
+                                     bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
+                        }
+                    }
                     allianceActualCounts[i]--;
                     allianceActualCounts[targetRange]++;
                 }
@@ -1154,7 +1177,25 @@ public:
                         LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting horde bot '{}' from range {} to range {} ({}-{}).", 
                                  bot->GetName(), i + 1, targetRange + 1, g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                     }
-                    AdjustBotToRange(bot, targetRange, g_HordeLevelRanges.data());
+                    //AdjustBotToRange(bot, targetRange, g_HordeLevelRanges.data());
+                    bool alreadyFlagged = false;
+                    for (auto& entry : g_PendingLevelResets)
+                    {
+                        if (entry.bot == bot)
+                        {
+                            alreadyFlagged = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyFlagged)
+                    {
+                        g_PendingLevelResets.push_back({bot, targetRange, g_HordeLevelRanges.data()});
+                        if (g_BotDistFullDebugMode)
+                        {
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.", 
+                                     bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
+                        }
+                    }
                     hordeActualCounts[i]--;
                     hordeActualCounts[targetRange]++;
                 }
