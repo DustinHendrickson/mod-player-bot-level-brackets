@@ -978,10 +978,9 @@ public:
                     Player* bot = safeBots.back();
                     if (!bot || !bot->IsInWorld())
                     {
-                        it = safeBots.erase(it);
-                        break;
+                        safeBots.pop_back();
+                        continue;
                     }
-                    safeBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Alliance safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
@@ -1048,8 +1047,8 @@ public:
                     Player* bot = flaggedBots.back();
                     if (!bot || !bot->IsInWorld())
                     {
-                        it = flaggedBots.erase(it);
-                        break;
+                        flaggedBots.pop_back();
+                        continue;
                     }
                     flaggedBots.pop_back();
                     if (g_BotDistFullDebugMode)
@@ -1156,8 +1155,8 @@ public:
                     Player* bot = safeBots.back();
                     if (!bot || !bot->IsInWorld())
                     {
-                        it = safeBots.erase(it);
-                        break;
+                        safeBots.pop_back();
+                        continue;
                     }
                     safeBots.pop_back();
                     if (g_BotDistFullDebugMode)
@@ -1226,8 +1225,8 @@ public:
                     Player* bot = flaggedBots.back();
                     if (!bot || !bot->IsInWorld())
                     {
-                        it = flaggedBots.erase(it);
-                        break;
+                        flaggedBots.pop_back();
+                        continue;
                     }
                     flaggedBots.pop_back();
                     if (g_BotDistFullDebugMode)
