@@ -573,7 +573,7 @@ static void ProcessPendingLevelResets()
                 it = g_PendingLevelResets.erase(it);
                 continue;
             }
-            
+
             if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
             {
                 AdjustBotToRange(bot, targetRange, it->factionRanges);
@@ -976,6 +976,11 @@ public:
                 while (allianceActualCounts[i] > allianceDesiredCounts[i] && !safeBots.empty())
                 {
                     Player* bot = safeBots.back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        it = safeBots.erase(it);
+                        break;
+                    }
                     safeBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
@@ -1041,6 +1046,11 @@ public:
                 while (allianceActualCounts[i] > allianceDesiredCounts[i] && !flaggedBots.empty())
                 {
                     Player* bot = flaggedBots.back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        it = flaggedBots.erase(it);
+                        break;
+                    }
                     flaggedBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
@@ -1144,6 +1154,11 @@ public:
                 while (hordeActualCounts[i] > hordeDesiredCounts[i] && !safeBots.empty())
                 {
                     Player* bot = safeBots.back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        it = safeBots.erase(it);
+                        break;
+                    }
                     safeBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
@@ -1209,6 +1224,11 @@ public:
                 while (hordeActualCounts[i] > hordeDesiredCounts[i] && !flaggedBots.empty())
                 {
                     Player* bot = flaggedBots.back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        it = flaggedBots.erase(it);
+                        break;
+                    }
                     flaggedBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
