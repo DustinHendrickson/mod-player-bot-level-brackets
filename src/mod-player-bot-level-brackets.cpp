@@ -554,17 +554,26 @@ static void ProcessPendingLevelResets()
                 break;
 
             Player* bot = it->bot;
+
+            if (!bot || !bot->IsInWorld())
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
             int targetRange = it->targetRange;
             if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
             {
                 it = g_PendingLevelResets.erase(it);
                 continue;
             }
+
             if (g_IgnoreFriendListed && BotInFriendList(bot))
             {
                 it = g_PendingLevelResets.erase(it);
                 continue;
             }
+            
             if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
             {
                 AdjustBotToRange(bot, targetRange, it->factionRanges);
