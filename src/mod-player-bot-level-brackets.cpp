@@ -467,6 +467,14 @@ static bool IsBotSafeForLevelReset(Player* bot)
         }
         return false;
     }
+    if (bot->GetSession()->isLogingOut())
+    {
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is logging out.", bot->GetName(), bot->GetLevel());
+        }
+        return false;
+    }
     if (!bot->IsInWorld())
     {
         if (g_BotDistFullDebugMode)
@@ -537,6 +545,11 @@ static std::vector<PendingResetEntry> g_PendingLevelResets;
 
 static void ProcessPendingLevelResets()
 {
+    if (!sRandomPlayerbotMgr->GetDisabledWithoutRealPlayerLogoutInProgress())
+    {
+        g_PendingLevelResets.clear();
+        return;
+    }
     if (g_BotDistFullDebugMode)
     {
         LOG_INFO("server.loading", "[BotLevelBrackets] Processing {} pending resets...", g_PendingLevelResets.size());

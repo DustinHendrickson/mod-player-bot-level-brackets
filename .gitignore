@@ -48,5 +48,3 @@ local.properties
 .cproject
 .vscode/
 .vsconfig/
-/conf/.vs
-/.vs
