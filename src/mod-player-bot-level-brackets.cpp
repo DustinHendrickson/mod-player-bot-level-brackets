@@ -1050,7 +1050,6 @@ public:
                         flaggedBots.pop_back();
                         continue;
                     }
-                    flaggedBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
@@ -1158,7 +1157,6 @@ public:
                         safeBots.pop_back();
                         continue;
                     }
-                    safeBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Horde safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
@@ -1228,7 +1226,6 @@ public:
                         flaggedBots.pop_back();
                         continue;
                     }
-                    flaggedBots.pop_back();
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
