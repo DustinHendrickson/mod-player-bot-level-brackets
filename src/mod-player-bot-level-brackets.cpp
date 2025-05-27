@@ -210,7 +210,12 @@ static uint8 GetRandomLevelInRange(const LevelRangeConfig& range)
 // Adjusts a bot's level by selecting a random level within the target range.
 static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRangeConfig* factionRanges)
 {
-    if (!bot || targetRangeIndex < 0 || targetRangeIndex >= g_NumRanges)
+    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+    {
+        return;
+    }
+    
+    if (targetRangeIndex < 0 || targetRangeIndex >= g_NumRanges)
     {
         return;
     }
@@ -329,7 +334,7 @@ static void LogAllBotLevels()
 // -----------------------------------------------------------------------------
 static bool BotInGuildWithRealPlayer(Player* bot)
 {
-    if (!bot)
+    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
     {
         return false;
     }
@@ -356,7 +361,7 @@ static bool BotInGuildWithRealPlayer(Player* bot)
 
 static bool BotInFriendList(Player* bot)
 {
-    if (!bot)
+    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
     {
         return false;
     }
@@ -459,7 +464,7 @@ static void ClampAndBalanceBrackets()
 // -----------------------------------------------------------------------------
 static bool IsBotSafeForLevelReset(Player* bot)
 {
-    if (!bot)
+    if (!bot || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
     {
         if (g_BotDistFullDebugMode)
         {
@@ -555,7 +560,7 @@ static void ProcessPendingLevelResets()
 
             Player* bot = it->bot;
 
-            if (!bot || !bot->IsInWorld())
+            if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
             {
                 it = g_PendingLevelResets.erase(it);
                 continue;
@@ -976,7 +981,7 @@ public:
                 while (allianceActualCounts[i] > allianceDesiredCounts[i] && !safeBots.empty())
                 {
                     Player* bot = safeBots.back();
-                    if (!bot || !bot->IsInWorld())
+                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
                     {
                         safeBots.pop_back();
                         continue;
@@ -1045,7 +1050,7 @@ public:
                 while (allianceActualCounts[i] > allianceDesiredCounts[i] && !flaggedBots.empty())
                 {
                     Player* bot = flaggedBots.back();
-                    if (!bot || !bot->IsInWorld())
+                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
                     {
                         flaggedBots.pop_back();
                         continue;
@@ -1152,7 +1157,7 @@ public:
                 while (hordeActualCounts[i] > hordeDesiredCounts[i] && !safeBots.empty())
                 {
                     Player* bot = safeBots.back();
-                    if (!bot || !bot->IsInWorld())
+                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
                     {
                         safeBots.pop_back();
                         continue;
@@ -1221,7 +1226,7 @@ public:
                 while (hordeActualCounts[i] > hordeDesiredCounts[i] && !flaggedBots.empty())
                 {
                     Player* bot = flaggedBots.back();
-                    if (!bot || !bot->IsInWorld())
+                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
                     {
                         flaggedBots.pop_back();
                         continue;
