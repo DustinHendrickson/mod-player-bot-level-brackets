@@ -69,7 +69,11 @@ static float g_RealPlayerWeight = 1.0f;
 static bool g_SyncFactions = false;
 
 // Array for character social list friends
-std::vector<int> SocialFriendsList;
+std::vector<int> g_SocialFriendsList;
+
+// Array for real player guild IDs.
+std::unordered_set<uint32> g_RealPlayerGuildIds;
+
 
 // -----------------------------------------------------------------------------
 // Loads the configuration from the config file.
@@ -141,7 +145,7 @@ static void LoadBotLevelBracketsConfig()
 // -----------------------------------------------------------------------------
 static void LoadSocialFriendList()
 {
-    SocialFriendsList.clear();
+    g_SocialFriendsList.clear();
     QueryResult result = CharacterDatabase.Query("SELECT friend FROM character_social WHERE flags = 1");
 
     if (!result)
@@ -160,13 +164,39 @@ static void LoadSocialFriendList()
     do
     {
         uint32 socialFriendGUID = result->Fetch()->Get<uint32>();
-        SocialFriendsList.push_back(socialFriendGUID);
+        g_SocialFriendsList.push_back(socialFriendGUID);
         if (g_BotDistFullDebugMode)
         {
             LOG_INFO("server.load", "[BotLevelBrackets] Adding GUID {} to Social Friend List", socialFriendGUID);
         }
     } while (result->NextRow());
 }
+
+// -----------------------------------------------------------------------------
+// Loads the guild IDs of real players into a global set.
+// This is used to check if a bot is in a guild with at least one real player online.
+// -----------------------------------------------------------------------------
+static void LoadRealPlayerGuildIds(const std::unordered_map<ObjectGuid, Player*>& players)
+{
+    g_RealPlayerGuildIds.clear();
+    for (const auto& itr : players)
+    {
+        Player* player = itr.second;
+        if (!player || !player->IsInWorld())
+        {
+            continue;
+        }
+        if (!IsPlayerBot(player))
+        {
+            uint32 guildId = player->GetGuildId();
+            if (guildId != 0)
+            {
+                g_RealPlayerGuildIds.insert(guildId);
+            }
+        }
+    }
+}
+
 
 // Returns the index of the level bracket that the given level belongs to.
 // If the bot is out of range, it returns -1
@@ -343,20 +373,7 @@ static bool BotInGuildWithRealPlayer(Player* bot)
     {
         return false;
     }
-
-    for (auto const& itr : ObjectAccessor::GetPlayers())
-    {
-        Player* member = itr.second;
-        if (!member || !member->IsInWorld())
-        {
-            continue;
-        }
-        if (!IsPlayerBot(member) && member->GetGuildId() == guildId)
-        {
-            return true;
-        }
-    }
-    return false;
+    return g_RealPlayerGuildIds.count(guildId) > 0;
 }
 
 static bool BotInFriendList(Player* bot)
@@ -366,9 +383,9 @@ static bool BotInFriendList(Player* bot)
         return false;
     }
 
-    for (size_t i = 0; i < SocialFriendsList.size(); ++i)
+    for (size_t i = 0; i < g_SocialFriendsList.size(); ++i)
     {
-        if (SocialFriendsList[i] == bot->GetGUID().GetRawValue())
+        if (g_SocialFriendsList[i] == bot->GetGUID().GetRawValue())
         {
             if (g_BotDistFullDebugMode)
             {
@@ -725,6 +742,10 @@ public:
         }
         m_timer = 0;
 
+        const auto& allPlayers = ObjectAccessor::GetPlayers();
+
+        LoadRealPlayerGuildIds(allPlayers);
+
         LoadSocialFriendList();
 
         if (g_UseDynamicDistribution)
@@ -735,7 +756,7 @@ public:
             uint32 totalAllianceReal = 0;
             uint32 totalHordeReal = 0;
 
-            for (auto const& itr : ObjectAccessor::GetPlayers())
+            for (auto const& itr : allPlayers)
             {
                 Player* player = itr.second;
                 if (!player || !player->IsInWorld())
@@ -847,7 +868,6 @@ public:
         std::vector<int> hordeActualCounts(g_NumRanges, 0);
         std::vector< std::vector<Player*> > hordeBotsByRange(g_NumRanges);
 
-        auto const& allPlayers = ObjectAccessor::GetPlayers();
         if (g_BotDistFullDebugMode)
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Starting processing of {} players.", allPlayers.size());
