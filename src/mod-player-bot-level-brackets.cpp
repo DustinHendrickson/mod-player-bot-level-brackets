@@ -18,6 +18,7 @@
 #include "DatabaseEnv.h"
 #include "QueryResult.h"
 #include <string>
+#include "Player.h"
 
 // Forward declarations.
 static bool IsAlliancePlayerBot(Player* bot);
@@ -73,6 +74,14 @@ std::vector<int> g_SocialFriendsList;
 
 // Array for real player guild IDs.
 std::unordered_set<uint32> g_RealPlayerGuildIds;
+
+struct PendingResetEntry
+{
+    ObjectGuid botGuid;
+    int targetRange;
+    const LevelRangeConfig* factionRanges;
+};
+static std::vector<PendingResetEntry> g_PendingLevelResets;
 
 
 // -----------------------------------------------------------------------------
@@ -196,6 +205,20 @@ static void LogAllBotLevels()
         }
     }
 }
+
+static void RemoveBotFromPendingResets(Player* bot)
+{
+    ObjectGuid guid = bot->GetGUID();
+    g_PendingLevelResets.erase(
+        std::remove_if(
+            g_PendingLevelResets.begin(),
+            g_PendingLevelResets.end(),
+            [guid](const PendingResetEntry& entry) { return entry.botGuid == guid; }
+        ),
+        g_PendingLevelResets.end()
+    );
+}
+
 
 // -----------------------------------------------------------------------------
 // Loads the friend guid(s) from character_social into array
@@ -549,14 +572,6 @@ static bool IsBotSafeForLevelReset(Player* bot)
 
 // Global container to hold bots flagged for pending level reset.
 // Each entry is a pair: the bot and the target level range index along with a pointer to the faction config.
-struct PendingResetEntry
-{
-    Player* bot;
-    int targetRange;
-    const LevelRangeConfig* factionRanges;
-};
-static std::vector<PendingResetEntry> g_PendingLevelResets;
-
 static void ProcessPendingLevelResets()
 {
     if (g_BotDistFullDebugMode)
@@ -575,9 +590,15 @@ static void ProcessPendingLevelResets()
             if (g_FlaggedProcessLimit > 0 && processed >= g_FlaggedProcessLimit)
                 break;
 
-            Player* bot = it->bot;
+            Player* bot = ObjectAccessor::FindPlayer(it->botGuid);
+            
+            if (!bot)
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
 
-            if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+            if (!bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
             {
                 it = g_PendingLevelResets.erase(it);
                 continue;
@@ -666,9 +687,10 @@ static int GetOrFlagPlayerBracket(Player* player)
     if (targetRange >= 0)
     {
         bool alreadyFlagged = false;
+        ObjectGuid guid = player->GetGUID();
         for (const auto &entry : g_PendingLevelResets)
         {
-            if (entry.bot == player)
+            if (entry.botGuid == guid)
             {
                 alreadyFlagged = true;
                 break;
@@ -676,7 +698,7 @@ static int GetOrFlagPlayerBracket(Player* player)
         }
         if (!alreadyFlagged)
         {
-            g_PendingLevelResets.push_back({player, targetRange, factionRanges});
+            g_PendingLevelResets.push_back({guid, targetRange, factionRanges});
         }
     }
 
@@ -1014,10 +1036,11 @@ public:
                     }
 
                     // Only flag if not already flagged
+                    ObjectGuid botGuid = bot->GetGUID();
                     bool alreadyFlagged = false;
-                    for (auto& entry : g_PendingLevelResets)
+                    for (const auto& entry : g_PendingLevelResets)
                     {
-                        if (entry.bot == bot)
+                        if (entry.botGuid == botGuid)
                         {
                             alreadyFlagged = true;
                             break;
@@ -1025,7 +1048,7 @@ public:
                     }
                     if (!alreadyFlagged)
                     {
-                        g_PendingLevelResets.push_back({bot, targetRange, g_AllianceLevelRanges.data()});
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.", 
@@ -1053,10 +1076,11 @@ public:
                         continue;
                     }
 
+                    ObjectGuid botGuid = bot->GetGUID();
                     bool alreadyFlagged = false;
-                    for (auto& entry : g_PendingLevelResets)
+                    for (const auto& entry : g_PendingLevelResets)
                     {
-                        if (entry.bot == bot)
+                        if (entry.botGuid == botGuid)
                         {
                             alreadyFlagged = true;
                             break;
@@ -1064,7 +1088,7 @@ public:
                     }
                     if (!alreadyFlagged)
                     {
-                        g_PendingLevelResets.push_back({bot, targetRange, g_AllianceLevelRanges.data()});
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' flagged for pending level reset to range {}-{}.", 
@@ -1134,9 +1158,10 @@ public:
                     }
 
                     bool alreadyFlagged = false;
-                    for (auto& entry : g_PendingLevelResets)
+                    ObjectGuid botGuid = bot->GetGUID();
+                    for (const auto& entry : g_PendingLevelResets)
                     {
-                        if (entry.bot == bot)
+                        if (entry.botGuid == botGuid)
                         {
                             alreadyFlagged = true;
                             break;
@@ -1144,7 +1169,7 @@ public:
                     }
                     if (!alreadyFlagged)
                     {
-                        g_PendingLevelResets.push_back({bot, targetRange, g_HordeLevelRanges.data()});
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.", 
@@ -1172,9 +1197,10 @@ public:
                     }
 
                     bool alreadyFlagged = false;
-                    for (auto& entry : g_PendingLevelResets)
+                    ObjectGuid botGuid = bot->GetGUID();
+                    for (const auto& entry : g_PendingLevelResets)
                     {
-                        if (entry.bot == bot)
+                        if (entry.botGuid == botGuid)
                         {
                             alreadyFlagged = true;
                             break;
@@ -1182,7 +1208,7 @@ public:
                     }
                     if (!alreadyFlagged)
                     {
-                        g_PendingLevelResets.push_back({bot, targetRange, g_HordeLevelRanges.data()});
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' flagged for pending level reset to range {}-{}.", 
@@ -1230,10 +1256,22 @@ private:
     uint32 m_flaggedTimer;  // For pending reset checks
 };
 
+class BotLevelBracketsPlayerScript : public PlayerScript
+{
+public:
+    BotLevelBracketsPlayerScript() : PlayerScript("BotLevelBracketsPlayerScript") {}
+
+    void OnPlayerLogout(Player* player)
+    {
+        RemoveBotFromPendingResets(player);
+    }
+};
+
 // -----------------------------------------------------------------------------
 // ENTRY POINT: Register the Bot Level Distribution Module
 // -----------------------------------------------------------------------------
 void Addmod_player_bot_level_bracketsScripts()
 {
     new BotLevelBracketsWorldScript();
+    new BotLevelBracketsPlayerScript();
 }
