@@ -78,6 +78,7 @@ BotLevelBrackets.FullDebugMode               | Enables full debug logging for th
 BotLevelBrackets.LiteDebugMode               | Enables lite debug logging for the Bot Level Brackets module.                                                                    | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.CheckFrequency              | Frequency (in seconds) at which the bot level distribution check is performed.                                                  | 300     | Positive Integer
 BotLevelBrackets.CheckFlaggedFrequency       | Frequency (in seconds) at which the bot level reset is performed for flagged bots that initially failed safety checks.             | 15      | Positive Integer
+BotLevelBrackets.FlaggedProcessLimit         | Maximum number of flagged bots to process per pending level change step.                                                           |         | Positive Integer
 BotLevelBrackets.Dynamic.UseDynamicDistribution      | Enables dynamic recalculation of bot distribution percentages based on non-bot player counts per bracket.                        | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.Dynamic.RealPlayerWeight            | Multiplier applied to each real player's contribution (active only if dynamic distribution is enabled).                          | 1.0     | Floating point number
 BotLevelBrackets.Dynamic.SyncFactions      | Enables synchronized brackets and weighting between Alliance and Horde factions when Dynamic Distribution is also enabled.                        | 0       | 0 (off) / 1 (on)

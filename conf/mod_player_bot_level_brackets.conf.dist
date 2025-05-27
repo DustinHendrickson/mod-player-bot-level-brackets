@@ -37,7 +37,7 @@ BotLevelBrackets.CheckFrequency = 300
 BotLevelBrackets.CheckFlaggedFrequency = 15
 
 #    BotLevelBrackets.FlaggedProcessLimit
-#        Description: Maximum number of flagged bots to process per flagged check step.
+#        Description: Maximum number of flagged bots to process per pending level change step.
 #                     0 = unlimited (process all flagged bots each step)
 #        Default:     5
 BotLevelBrackets.FlaggedProcessLimit = 5
