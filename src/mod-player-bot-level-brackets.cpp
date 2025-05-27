@@ -141,6 +141,63 @@ static void LoadBotLevelBracketsConfig()
 }
 
 // -----------------------------------------------------------------------------
+// BOT DETECTION HELPERS
+// -----------------------------------------------------------------------------
+static bool IsPlayerBot(Player* player)
+{
+    if (!player)
+    {
+        return false;
+    }
+    PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(player);
+    return botAI && botAI->IsBotAI();
+}
+
+static bool IsPlayerRandomBot(Player* player)
+{
+    if (!player)
+    {
+        return false;
+    }
+    return sRandomPlayerbotMgr->IsRandomBot(player);
+}
+
+static bool IsAlliancePlayerBot(Player* bot)
+{
+    return bot && (bot->GetTeamId() == TEAM_ALLIANCE);
+}
+
+static bool IsHordePlayerBot(Player* bot)
+{
+    return bot && (bot->GetTeamId() == TEAM_HORDE);
+}
+
+static void LogAllBotLevels()
+{
+    if (g_BotDistFullDebugMode)
+    {
+        std::map<uint8, uint32> botLevelCount;
+        for (auto const& itr : ObjectAccessor::GetPlayers())
+        {
+            Player* player = itr.second;
+            if (!player || !player->IsInWorld())
+            {
+                continue;
+            }
+            if (!IsPlayerBot(player))
+            {
+                continue;
+            }
+            botLevelCount[player->GetLevel()]++;
+        }
+        for (const auto& entry : botLevelCount)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] Level {}: {} bots", entry.first, entry.second);
+        }
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Loads the friend guid(s) from character_social into array
 // -----------------------------------------------------------------------------
 static void LoadSocialFriendList()
@@ -300,63 +357,6 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
     }
 
     ChatHandler(bot->GetSession()).SendSysMessage("[mod-bot-level-brackets] Your level has been reset.");
-}
-
-// -----------------------------------------------------------------------------
-// BOT DETECTION HELPERS
-// -----------------------------------------------------------------------------
-static bool IsPlayerBot(Player* player)
-{
-    if (!player)
-    {
-        return false;
-    }
-    PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(player);
-    return botAI && botAI->IsBotAI();
-}
-
-static bool IsPlayerRandomBot(Player* player)
-{
-    if (!player)
-    {
-        return false;
-    }
-    return sRandomPlayerbotMgr->IsRandomBot(player);
-}
-
-static bool IsAlliancePlayerBot(Player* bot)
-{
-    return bot && (bot->GetTeamId() == TEAM_ALLIANCE);
-}
-
-static bool IsHordePlayerBot(Player* bot)
-{
-    return bot && (bot->GetTeamId() == TEAM_HORDE);
-}
-
-static void LogAllBotLevels()
-{
-    if (g_BotDistFullDebugMode)
-    {
-        std::map<uint8, uint32> botLevelCount;
-        for (auto const& itr : ObjectAccessor::GetPlayers())
-        {
-            Player* player = itr.second;
-            if (!player || !player->IsInWorld())
-            {
-                continue;
-            }
-            if (!IsPlayerBot(player))
-            {
-                continue;
-            }
-            botLevelCount[player->GetLevel()]++;
-        }
-        for (const auto& entry : botLevelCount)
-        {
-            LOG_INFO("server.loading", "[BotLevelBrackets] Level {}: {} bots", entry.first, entry.second);
-        }
-    }
 }
 
 // -----------------------------------------------------------------------------
@@ -957,6 +957,7 @@ public:
         }
 
         // Process Alliance bots.
+        // Process Alliance bots.
         if (totalAllianceBots > 0)
         {
             if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
@@ -970,82 +971,49 @@ public:
                 if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {} ({}-{}): Desired = {}, Actual = {}.", 
-                             i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper,
-                             allianceDesiredCounts[i], allianceActualCounts[i]);
+                            i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper,
+                            allianceDesiredCounts[i], allianceActualCounts[i]);
                 }
             }
+
             for (int i = 0; i < g_NumRanges; ++i)
             {
-                if (g_BotDistFullDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] >>> Processing Alliance bots in range {}.", i + 1);
-                }
+                // Collect safe and flagged bots
                 std::vector<Player*> safeBots;
                 std::vector<Player*> flaggedBots;
                 for (Player* bot : allianceBotsByRange[i])
                 {
-                    if (IsBotSafeForLevelReset(bot))
-                    {
+                    if (IsBotSafeForLevelReset(bot)) {
                         safeBots.push_back(bot);
-                    }
-                    else
-                    {
+                    } else {
                         flaggedBots.push_back(bot);
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' is NOT safe for level reset in range {}.", 
-                                     bot->GetName(), i + 1);
-                        }
                     }
                 }
-                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !safeBots.empty())
+
+                // --------- Efficient surplus redistribution for safeBots ----------
+                // Build a list of target ranges that need bots
+                std::vector<int> targetRanges;
+                for (int j = 0; j < g_NumRanges; ++j)
+                {
+                    if (allianceActualCounts[j] < allianceDesiredCounts[j])
+                        targetRanges.push_back(j);
+                }
+                size_t targetIdx = 0;
+                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !safeBots.empty() && targetIdx < targetRanges.size())
                 {
                     Player* bot = safeBots.back();
-                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+                    safeBots.pop_back();
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    // Skip if no need (already filled by earlier loop)
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
                     {
-                        safeBots.pop_back();
+                        targetIdx++;
                         continue;
                     }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Alliance safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
-                    }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j] && g_AllianceLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for alliance safe bot '{}'.", bot->GetName());
-                        }
-                        break;
-                    }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting alliance bot '{}' from range {} to range {} ({}-{}).",  
-                                 bot->GetName(), i + 1, targetRange + 1, g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
-                    }
+
+                    // Only flag if not already flagged
                     bool alreadyFlagged = false;
                     for (auto& entry : g_PendingLevelResets)
                     {
@@ -1061,55 +1029,30 @@ public:
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.", 
-                                     bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
+                                bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                         }
                     }
                     allianceActualCounts[i]--;
                     allianceActualCounts[targetRange]++;
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
+                        targetIdx++;
                 }
-                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !flaggedBots.empty())
+                // --------- Efficient surplus redistribution for flaggedBots ----------
+                // Reset for flagged bots
+                targetIdx = 0;
+                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !flaggedBots.empty() && targetIdx < targetRanges.size())
                 {
                     Player* bot = flaggedBots.back();
-                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+                    flaggedBots.pop_back();
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
                     {
-                        flaggedBots.pop_back();
+                        targetIdx++;
                         continue;
                     }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
-                    }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j] && g_AllianceLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for flagged alliance bot '{}' for pending reset.", bot->GetName());
-                        }
-                        break;
-                    }
+
                     bool alreadyFlagged = false;
                     for (auto& entry : g_PendingLevelResets)
                     {
@@ -1124,13 +1067,18 @@ public:
                         g_PendingLevelResets.push_back({bot, targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.", 
-                                     bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' flagged for pending level reset to range {}-{}.", 
+                                bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                         }
                     }
+                    allianceActualCounts[i]--;
+                    allianceActualCounts[targetRange]++;
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
+                        targetIdx++;
                 }
             }
         }
+
 
         // Process Horde bots.
         if (totalHordeBots > 0)
@@ -1146,82 +1094,45 @@ public:
                 if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Horde Range {} ({}-{}): Desired = {}, Actual = {}.",
-                             i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper,
-                             hordeDesiredCounts[i], hordeActualCounts[i]);
+                            i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper,
+                            hordeDesiredCounts[i], hordeActualCounts[i]);
                 }
             }
+
             for (int i = 0; i < g_NumRanges; ++i)
             {
-                if (g_BotDistFullDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Processing Horde bots in range {}.", i + 1);
-                }
                 std::vector<Player*> safeBots;
                 std::vector<Player*> flaggedBots;
                 for (Player* bot : hordeBotsByRange[i])
                 {
-                    if (IsBotSafeForLevelReset(bot))
-                    {
+                    if (IsBotSafeForLevelReset(bot)) {
                         safeBots.push_back(bot);
-                    }
-                    else
-                    {
+                    } else {
                         flaggedBots.push_back(bot);
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' is NOT safe for level reset in range {}.", 
-                                     bot->GetName(), i + 1);
-                        }
                     }
                 }
-                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !safeBots.empty())
+
+                // Efficient surplus redistribution for safeBots
+                std::vector<int> targetRanges;
+                for (int j = 0; j < g_NumRanges; ++j)
+                {
+                    if (hordeActualCounts[j] < hordeDesiredCounts[j])
+                        targetRanges.push_back(j);
+                }
+                size_t targetIdx = 0;
+                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !safeBots.empty() && targetIdx < targetRanges.size())
                 {
                     Player* bot = safeBots.back();
-                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+                    safeBots.pop_back();
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
                     {
-                        safeBots.pop_back();
+                        targetIdx++;
                         continue;
                     }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Horde safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
-                    }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j] && g_HordeLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for safe horde bot '{}'.", bot->GetName());
-                        }
-                        break;
-                    }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting horde bot '{}' from range {} to range {} ({}-{}).", 
-                                 bot->GetName(), i + 1, targetRange + 1, g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
-                    }
+
                     bool alreadyFlagged = false;
                     for (auto& entry : g_PendingLevelResets)
                     {
@@ -1237,55 +1148,29 @@ public:
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.", 
-                                     bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
+                                bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                         }
                     }
                     hordeActualCounts[i]--;
                     hordeActualCounts[targetRange]++;
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
+                        targetIdx++;
                 }
-                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !flaggedBots.empty())
+                // Efficient surplus redistribution for flaggedBots
+                targetIdx = 0;
+                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !flaggedBots.empty() && targetIdx < targetRanges.size())
                 {
                     Player* bot = flaggedBots.back();
-                    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+                    flaggedBots.pop_back();
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
                     {
-                        flaggedBots.pop_back();
+                        targetIdx++;
                         continue;
                     }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
-                    }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j] && g_HordeLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for flagged horde bot '{}' for pending reset.", bot->GetName());
-                        }
-                        break;
-                    }
+
                     bool alreadyFlagged = false;
                     for (auto& entry : g_PendingLevelResets)
                     {
@@ -1300,13 +1185,18 @@ public:
                         g_PendingLevelResets.push_back({bot, targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.", 
-                                     bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' flagged for pending level reset to range {}-{}.", 
+                                bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                         }
                     }
+                    hordeActualCounts[i]--;
+                    hordeActualCounts[targetRange]++;
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
+                        targetIdx++;
                 }
             }
         }
+
 
         if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
         {
