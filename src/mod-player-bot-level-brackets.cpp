@@ -554,17 +554,26 @@ static void ProcessPendingLevelResets()
                 break;
 
             Player* bot = it->bot;
+
+            if (!bot || !bot->IsInWorld())
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
             int targetRange = it->targetRange;
             if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
             {
                 it = g_PendingLevelResets.erase(it);
                 continue;
             }
+
             if (g_IgnoreFriendListed && BotInFriendList(bot))
             {
                 it = g_PendingLevelResets.erase(it);
                 continue;
             }
+
             if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
             {
                 AdjustBotToRange(bot, targetRange, it->factionRanges);
@@ -967,7 +976,11 @@ public:
                 while (allianceActualCounts[i] > allianceDesiredCounts[i] && !safeBots.empty())
                 {
                     Player* bot = safeBots.back();
-                    safeBots.pop_back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        safeBots.pop_back();
+                        continue;
+                    }
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Alliance safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
@@ -1032,7 +1045,11 @@ public:
                 while (allianceActualCounts[i] > allianceDesiredCounts[i] && !flaggedBots.empty())
                 {
                     Player* bot = flaggedBots.back();
-                    flaggedBots.pop_back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        flaggedBots.pop_back();
+                        continue;
+                    }
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
@@ -1135,7 +1152,11 @@ public:
                 while (hordeActualCounts[i] > hordeDesiredCounts[i] && !safeBots.empty())
                 {
                     Player* bot = safeBots.back();
-                    safeBots.pop_back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        safeBots.pop_back();
+                        continue;
+                    }
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Horde safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
@@ -1200,7 +1221,11 @@ public:
                 while (hordeActualCounts[i] > hordeDesiredCounts[i] && !flaggedBots.empty())
                 {
                     Player* bot = flaggedBots.back();
-                    flaggedBots.pop_back();
+                    if (!bot || !bot->IsInWorld())
+                    {
+                        flaggedBots.pop_back();
+                        continue;
+                    }
                     if (g_BotDistFullDebugMode)
                     {
                         LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
