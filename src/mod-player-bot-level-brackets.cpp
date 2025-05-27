@@ -60,7 +60,6 @@ static bool   g_UseDynamicDistribution  = false;
 static bool   g_IgnoreFriendListed = true;
 static uint32 g_FlaggedProcessLimit = 5; // 0 = unlimited
 
-
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
 
@@ -84,9 +83,19 @@ struct PendingResetEntry
 static std::vector<PendingResetEntry> g_PendingLevelResets;
 
 
-// -----------------------------------------------------------------------------
-// Loads the configuration from the config file.
-// -----------------------------------------------------------------------------
+/**
+ * @brief Loads and initializes the configuration for player bot level brackets.
+ *
+ * This function reads various configuration options related to bot level brackets from the server's configuration manager.
+ * It sets global variables that control the behavior of bot distribution, debug modes, dynamic distribution, and level ranges
+ * for both Alliance and Horde factions. The function also loads the minimum and maximum levels for random bots, the number of
+ * level brackets, and the desired percentage of bots per bracket for each faction.
+ *
+ * If the SyncFactions option is enabled, the function ensures that the bracket definitions (number, lower, and upper bounds)
+ * match exactly between Alliance and Horde. If a mismatch is detected, the server will log a fatal error and terminate.
+ *
+ * After loading and validating the configuration, the function calls ClampAndBalanceBrackets() to finalize bracket setup.
+ */
 static void LoadBotLevelBracketsConfig()
 {
     g_BotLevelBracketsEnabled = sConfigMgr->GetOption<bool>("BotLevelBrackets.Enabled", true);
@@ -149,9 +158,19 @@ static void LoadBotLevelBracketsConfig()
     ClampAndBalanceBrackets();
 }
 
+
 // -----------------------------------------------------------------------------
 // BOT DETECTION HELPERS
 // -----------------------------------------------------------------------------
+/**
+ * @brief Checks if the given player is a bot.
+ *
+ * This function checks if the provided Player pointer is valid and if it has an associated PlayerbotAI instance
+ * that indicates it is a bot. It returns true if the player is a bot, false otherwise.
+ *
+ * @param player Pointer to the Player object to check.
+ * @return true if the player is a bot, false otherwise.
+ */
 static bool IsPlayerBot(Player* player)
 {
     if (!player)
@@ -162,6 +181,16 @@ static bool IsPlayerBot(Player* player)
     return botAI && botAI->IsBotAI();
 }
 
+
+/**
+ * @brief Checks if the given player is a random bot.
+ *
+ * This function verifies whether the provided Player pointer refers to a random bot
+ * managed by the RandomPlayerbotMgr. If the player pointer is null, it returns false.
+ *
+ * @param player Pointer to the Player object to check.
+ * @return true if the player is a random bot, false otherwise.
+ */
 static bool IsPlayerRandomBot(Player* player)
 {
     if (!player)
@@ -171,16 +200,44 @@ static bool IsPlayerRandomBot(Player* player)
     return sRandomPlayerbotMgr->IsRandomBot(player);
 }
 
+
+/**
+ * @brief Checks if the given Player bot belongs to the Alliance team.
+ *
+ * This function verifies that the provided Player pointer is valid and
+ * determines whether the bot's team ID corresponds to the Alliance faction.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is a member of the Alliance team, false otherwise.
+ */
 static bool IsAlliancePlayerBot(Player* bot)
 {
     return bot && (bot->GetTeamId() == TEAM_ALLIANCE);
 }
 
+
+/**
+ * @brief Checks if the given Player bot belongs to the Horde team.
+ *
+ * This function verifies that the provided Player pointer is valid and
+ * determines whether the bot's team ID corresponds to the Horde faction.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is a member of the Horde team, false otherwise.
+ */
 static bool IsHordePlayerBot(Player* bot)
 {
     return bot && (bot->GetTeamId() == TEAM_HORDE);
 }
 
+
+/**
+ * @brief Logs the number of player bots at each level if full debug mode is enabled.
+ *
+ * This function iterates through all players in the world, counts the number of bots at each level,
+ * and logs the results. Only bots that are currently in the world are considered. The logging occurs
+ * only if the global debug mode flag `g_BotDistFullDebugMode` is set to true.
+ */
 static void LogAllBotLevels()
 {
     if (g_BotDistFullDebugMode)
@@ -206,6 +263,16 @@ static void LogAllBotLevels()
     }
 }
 
+
+/**
+ * @brief Removes a bot from the list of pending level resets.
+ *
+ * This function searches the global g_PendingLevelResets container for any entries
+ * that match the provided bot's GUID and removes them. It is used to ensure that
+ * a bot is no longer scheduled for a pending level reset.
+ *
+ * @param bot Pointer to the Player object representing the bot to remove.
+ */
 static void RemoveBotFromPendingResets(Player* bot)
 {
     ObjectGuid guid = bot->GetGUID();
@@ -220,9 +287,16 @@ static void RemoveBotFromPendingResets(Player* bot)
 }
 
 
-// -----------------------------------------------------------------------------
-// Loads the friend guid(s) from character_social into array
-// -----------------------------------------------------------------------------
+/**
+ * @brief Loads the list of social friend GUIDs from the database into the global g_SocialFriendsList.
+ *
+ * This function clears the existing g_SocialFriendsList and queries the CharacterDatabase
+ * for all GUIDs marked as friends (flags = 1) in the character_social table. Each retrieved
+ * GUID is added to the g_SocialFriendsList vector. If full debug mode is enabled, the function
+ * logs the loading process and each GUID added.
+ *
+ * The function returns immediately if the query fails or if no results are found.
+ */
 static void LoadSocialFriendList()
 {
     g_SocialFriendsList.clear();
@@ -252,10 +326,16 @@ static void LoadSocialFriendList()
     } while (result->NextRow());
 }
 
-// -----------------------------------------------------------------------------
-// Loads the guild IDs of real players into a global set.
-// This is used to check if a bot is in a guild with at least one real player online.
-// -----------------------------------------------------------------------------
+
+/**
+ * @brief Populates the global set of real player guild IDs from the provided player map.
+ *
+ * Iterates through the given map of players, and for each player that is not a bot and is currently in the world,
+ * retrieves their guild ID. If the guild ID is non-zero, it is added to the global set of real player guild IDs.
+ * The global set is cleared before population.
+ *
+ * @param players An unordered map associating ObjectGuids with Player pointers to process.
+ */
 static void LoadRealPlayerGuildIds(const std::unordered_map<ObjectGuid, Player*>& players)
 {
     g_RealPlayerGuildIds.clear();
@@ -278,8 +358,18 @@ static void LoadRealPlayerGuildIds(const std::unordered_map<ObjectGuid, Player*>
 }
 
 
-// Returns the index of the level bracket that the given level belongs to.
-// If the bot is out of range, it returns -1
+/**
+ * @brief Returns the index of the level range that contains the specified level for the given team.
+ *
+ * This function checks if the provided level is within the allowed random bot level range.
+ * It then searches through the level ranges specific to the team (Alliance or Horde) and returns
+ * the index of the range that contains the given level. If the level is not within any range or
+ * the team ID is invalid, it returns -1.
+ *
+ * @param level The level to check.
+ * @param teamID The team identifier (TEAM_ALLIANCE or TEAM_HORDE).
+ * @return int The index of the matching level range, or -1 if not found or out of bounds.
+ */
 static int GetLevelRangeIndex(uint8 level, uint8 teamID)
 {
     if (level < g_RandomBotMinLevel || level > g_RandomBotMaxLevel)
@@ -311,13 +401,35 @@ static int GetLevelRangeIndex(uint8 level, uint8 teamID)
     return -1;
 }
 
-// Returns a random level within the provided range.
+
+/**
+ * @brief Returns a random level within the specified range.
+ *
+ * This function generates a random unsigned 8-bit integer (uint8) between the lower and upper bounds
+ * (inclusive) defined in the provided LevelRangeConfig structure.
+ *
+ * @param range The LevelRangeConfig structure containing the lower and upper bounds for the level range.
+ * @return uint8 A random level within the specified range [range.lower, range.upper].
+ */
 static uint8 GetRandomLevelInRange(const LevelRangeConfig& range)
 {
     return urand(range.lower, range.upper);
 }
 
-// Adjusts a bot's level by selecting a random level within the target range.
+
+/**
+ * @brief Adjusts the level of a player bot to fit within a specified level range bracket.
+ *
+ * This function ensures that the given bot is valid, in the world, and not in the process of logging out or being removed.
+ * It then checks if the target range index is valid and, if the bot is mounted, dismounts it.
+ * For Death Knight bots, it enforces a minimum level of 55, skipping adjustment if the target range is below this threshold.
+ * The bot's level is then randomized within the specified range, and the bot is re-randomized using PlayerbotFactory.
+ * Debug information is logged if enabled, and a system message is sent to the bot to notify about the level reset.
+ *
+ * @param bot Pointer to the Player object representing the bot to adjust.
+ * @param targetRangeIndex Index of the target level range in the factionRanges array.
+ * @param factionRanges Pointer to an array of LevelRangeConfig structures defining level brackets for the bot's faction.
+ */
 static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRangeConfig* factionRanges)
 {
     if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
@@ -382,9 +494,17 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
     ChatHandler(bot->GetSession()).SendSysMessage("[mod-bot-level-brackets] Your level has been reset.");
 }
 
-// -----------------------------------------------------------------------------
-// HELPER FUNCTION: Check if a bot is in a guild with at least one real player online.
-// -----------------------------------------------------------------------------
+
+/**
+ * @brief Checks if the given bot is in a guild that contains at least one real player.
+ *
+ * This function verifies several conditions to ensure the bot is valid and currently in the world,
+ * has an active session, is not logging out, and is not in the process of being removed from the world.
+ * It then checks if the bot is part of a guild and whether that guild is known to contain real players.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is in a guild with at least one real player, false otherwise.
+ */
 static bool BotInGuildWithRealPlayer(Player* bot)
 {
     if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
@@ -399,6 +519,19 @@ static bool BotInGuildWithRealPlayer(Player* bot)
     return g_RealPlayerGuildIds.count(guildId) > 0;
 }
 
+
+/**
+ * @brief Checks if the given bot is present in any real player's friends list.
+ *
+ * This function verifies if the provided bot player is valid, currently in the world,
+ * has an active session, is not logging out, and is not being removed from the world.
+ * It then iterates through the global friends list to determine if the bot's GUID
+ * matches any entry, indicating that the bot is on a real player's friends list.
+ * If debug mode is enabled, it logs additional information when a match is found.
+ *
+ * @param bot Pointer to the Player object representing the bot to check.
+ * @return true if the bot is on a real player's friends list, false otherwise.
+ */
 static bool BotInFriendList(Player* bot)
 {
     if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
@@ -420,6 +553,24 @@ static bool BotInFriendList(Player* bot)
     return false;
 }
 
+
+/**
+ * @brief Clamps and balances the level brackets for Alliance and Horde bot distributions.
+ *
+ * This function ensures that the lower and upper bounds of each level bracket for both Alliance and Horde
+ * are within the allowed minimum and maximum bot levels. If a bracket's lower bound exceeds its upper bound,
+ * its desired percentage is set to zero. After clamping, the function checks if the sum of desired percentages
+ * for each faction equals 100. If not, and the total is greater than zero, it auto-adjusts the percentages
+ * upwards (one at a time, round-robin) until the sum reaches 100. Debug information is logged if enabled.
+ *
+ * Globals used:
+ * - g_AllianceLevelRanges: Array of Alliance level brackets.
+ * - g_HordeLevelRanges: Array of Horde level brackets.
+ * - g_NumRanges: Number of level brackets.
+ * - g_RandomBotMinLevel: Minimum allowed bot level.
+ * - g_RandomBotMaxLevel: Maximum allowed bot level.
+ * - g_BotDistFullDebugMode: Debug mode flag.
+ */
 static void ClampAndBalanceBrackets()
 {
     for (uint8 i = 0; i < g_NumRanges; ++i)
@@ -499,9 +650,25 @@ static void ClampAndBalanceBrackets()
     }
 }
 
-// -----------------------------------------------------------------------------
-// SAFETY CHECKS FOR LEVEL RESET
-// -----------------------------------------------------------------------------
+
+/**
+ * @brief Checks if a bot is in a safe state to perform a level reset.
+ *
+ * This function verifies several conditions to ensure that the provided bot is safe for a level reset operation.
+ * The checks include:
+ * - The bot pointer and its session are valid and not in the process of logging out or being removed from the world.
+ * - The bot is currently in the world and alive.
+ * - The bot is not in combat.
+ * - The bot is not in a battleground, arena, random dungeon, or battleground queue.
+ * - The bot is not in flight.
+ * - If the bot is in a group, all group members must also be bots.
+ *
+ * If any of these conditions are not met, the function returns false. If debugging is enabled via
+ * g_BotDistFullDebugMode, detailed log messages are generated for each failure case.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is safe for level reset, false otherwise.
+ */
 static bool IsBotSafeForLevelReset(Player* bot)
 {
     if (!bot || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
@@ -570,8 +737,25 @@ static bool IsBotSafeForLevelReset(Player* bot)
     return true;
 }
 
-// Global container to hold bots flagged for pending level reset.
-// Each entry is a pair: the bot and the target level range index along with a pointer to the faction config.
+
+/**
+ * @brief Processes the pending level reset requests for player bots.
+ *
+ * This function iterates through the global list of pending level resets (`g_PendingLevelResets`)
+ * and attempts to reset the level of each eligible bot to a specified range. The function enforces
+ * a configurable limit (`g_FlaggedProcessLimit`) on the number of resets processed per cycle.
+ *
+ * Bots are skipped and removed from the pending list if:
+ *   - The bot is not found or not in the world.
+ *   - The bot's session is invalid, logging out, or being removed from the world.
+ *   - The bot is in a guild with real players and `g_IgnoreGuildBotsWithRealPlayers` is enabled.
+ *   - The bot is in a friend list and `g_IgnoreFriendListed` is enabled.
+ *
+ * If a bot is eligible and safe for a level reset, its level is adjusted to the target range using
+ * `AdjustBotToRange`. Debug information is logged if `g_BotDistFullDebugMode` is enabled.
+ *
+ * The function returns immediately if there are no pending resets.
+ */
 static void ProcessPendingLevelResets()
 {
     if (g_BotDistFullDebugMode)
@@ -634,10 +818,17 @@ static void ProcessPendingLevelResets()
         }
 }
 
-// This function returns a valid bracket index for the given player's level.
-// If the player's level is out of range (GetLevelRangeIndex returns -1),
-// it computes the closest valid bracket using the provided factionRanges,
-// flags the player for a pending reset by adding it to g_PendingLevelResets,
+
+/**
+ * @brief Determines the level bracket index for a given player or flags the player for a level reset if not in any bracket.
+ *
+ * This function attempts to find the appropriate level range (bracket) for the specified player based on their level and faction.
+ * If the player is not currently within any defined bracket, the function finds the closest bracket and flags the player for a level reset,
+ * ensuring that each player is only flagged once. The function returns the index of the bracket if found, or -1 if the player is not in any bracket.
+ *
+ * @param player Pointer to the Player object whose bracket is to be determined.
+ * @return int The index of the level bracket if found, otherwise -1.
+ */
 static int GetOrFlagPlayerBracket(Player* player)
 {
     int rangeIndex = GetLevelRangeIndex(player->GetLevel(), player->GetTeamId());
@@ -705,14 +896,49 @@ static int GetOrFlagPlayerBracket(Player* player)
     return -1;
 }
 
+
 // -----------------------------------------------------------------------------
 // WORLD SCRIPT: Bot Level Distribution with Faction Separation
 // -----------------------------------------------------------------------------
+/**
+ * @class BotLevelBracketsWorldScript
+ * @brief WorldScript implementation for dynamic bot level bracket distribution in AzerothCore.
+ *
+ * This script manages the distribution of player bots across predefined level brackets for both Alliance and Horde factions.
+ * It dynamically adjusts the desired percentage of bots in each bracket based on the real player population, ensuring a balanced
+ * and realistic distribution of bots throughout the server. The script also handles pending level resets for bots to move them
+ * between brackets as needed.
+ *
+ * Key Features:
+ * - Loads configuration and social data on startup.
+ * - Periodically recalculates desired bot distribution based on real player bracket counts.
+ * - Supports both synchronized and separate faction weighting modes.
+ * - Efficiently redistributes surplus bots to underpopulated brackets, flagging them for level reset.
+ * - Skips bots in guilds with real players or on friend lists if configured.
+ * - Provides detailed debug logging for all major operations and decisions.
+ *
+ * Main Methods:
+ * - OnStartup(): Loads configuration and logs initial state.
+ * - OnUpdate(uint32 diff): Periodically checks and adjusts bot distribution, processes pending level resets.
+ *
+ * Member Variables:
+ * - m_timer: Tracks time for periodic distribution adjustments.
+ * - m_flaggedTimer: Tracks time for processing pending level resets.
+ */
 class BotLevelBracketsWorldScript : public WorldScript
 {
 public:
     BotLevelBracketsWorldScript() : WorldScript("BotLevelBracketsWorldScript"), m_timer(0), m_flaggedTimer(0) { }
 
+    /**
+     * @brief Called when the module is started up.
+     *
+     * This function initializes the Bot Level Brackets module by loading configuration
+     * and social friend list data. It checks if the module is enabled via configuration,
+     * and logs a message if it is disabled. If debug modes are enabled, it logs detailed
+     * information about the module's configuration, including check frequencies and
+     * desired percentage distributions for Alliance and Horde level ranges.
+     */
     void OnStartup() override
     {
         LoadBotLevelBracketsConfig();
@@ -738,6 +964,30 @@ public:
         }
     }
 
+
+    /**
+     * @brief Periodically updates the bot level bracket distribution for player bots.
+     *
+     * This function is called on a timed interval and is responsible for:
+     * - Checking if the bot level bracket system is enabled.
+     * - Managing timers for regular and flagged bot checks.
+     * - Processing pending level resets for bots flagged for redistribution.
+     * - Gathering all players and updating guild and friend list caches.
+     * - If dynamic distribution is enabled, recalculates the desired percentage of bots per level bracket
+     *   based on the current distribution of real players, optionally syncing between factions.
+     * - For each faction (Alliance and Horde):
+     *   - Counts the actual number of bots in each level bracket.
+     *   - Determines the desired number of bots per bracket based on the calculated percentages.
+     *   - Identifies surplus bots in overpopulated brackets and flags them for level reset to underpopulated brackets,
+     *     prioritizing "safe" bots (those eligible for immediate reset) and then flagged bots.
+     *   - Updates internal counts to reflect pending redistributions.
+     * - Provides detailed debug logging if enabled, including before and after distributions.
+     *
+     * The function ensures that the distribution of player bots across level brackets remains balanced
+     * according to the current configuration and real player population, improving the gameplay experience.
+     *
+     * @param diff The time in milliseconds since the last update call.
+     */
     void OnUpdate(uint32 diff) override
     {
         if (!g_BotLevelBracketsEnabled)
@@ -978,7 +1228,6 @@ public:
             LOG_INFO("server.loading", "[BotLevelBrackets] =========================================");
         }
 
-        // Process Alliance bots.
         // Process Alliance bots.
         if (totalAllianceBots > 0)
         {
@@ -1256,6 +1505,17 @@ private:
     uint32 m_flaggedTimer;  // For pending reset checks
 };
 
+
+/**
+ * @class BotLevelBracketsPlayerScript
+ * @brief Handles player-specific logic for the Player Bot Level Brackets module.
+ *
+ * This script is attached to player events and is responsible for managing
+ * bot-related state when a player logs out. Specifically, it ensures that
+ * any bot associated with the player is removed from pending reset operations.
+ *
+ * @see PlayerScript
+ */
 class BotLevelBracketsPlayerScript : public PlayerScript
 {
 public:
@@ -1267,9 +1527,16 @@ public:
     }
 };
 
+
 // -----------------------------------------------------------------------------
 // ENTRY POINT: Register the Bot Level Distribution Module
 // -----------------------------------------------------------------------------
+/**
+ * @brief Registers the world and player scripts for the Player Bot Level Brackets module.
+ *
+ * This function instantiates and adds the BotLevelBracketsWorldScript and BotLevelBracketsPlayerScript
+ * to the script system, enabling custom logic for player bot level brackets within the game world.
+ */
 void Addmod_player_bot_level_bracketsScripts()
 {
     new BotLevelBracketsWorldScript();
