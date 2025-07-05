@@ -57,6 +57,11 @@ BotLevelBrackets.IgnoreGuildBotsWithRealPlayers = 1
 #                      Valid values: 0 (off) / 1 (on)
 BotLevelBrackets.IgnoreFriendListed = 1
 
+# BotLevelBrackets.ExcludeNames
+#     Description: Comma-separated list of case insensitive bot names to exclude from all bracket checks.
+#     Default:     ""
+BotLevelBrackets.ExcludeNames =
+
 #
 #    BotLevelBrackets.NumRanges
 #        Description: The number of level brackets used for bot distribution.

@@ -71,6 +71,9 @@ static bool g_SyncFactions = false;
 // Array for character social list friends
 std::vector<int> g_SocialFriendsList;
 
+// Array for excluded bot names.
+static std::vector<std::string> g_ExcludeBotNames;
+
 // Array for real player guild IDs.
 std::unordered_set<uint32> g_RealPlayerGuildIds;
 
@@ -110,6 +113,17 @@ static void LoadBotLevelBracketsConfig()
     g_SyncFactions = sConfigMgr->GetOption<bool>("BotLevelBrackets.Dynamic.SyncFactions", false);
     g_IgnoreFriendListed = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreFriendListed", true);
     g_FlaggedProcessLimit = sConfigMgr->GetOption<uint32>("BotLevelBrackets.FlaggedProcessLimit", 5);
+
+    std::string excludeNames = sConfigMgr->GetOption<std::string>("BotLevelBrackets.ExcludeNames", "");
+    g_ExcludeBotNames.clear();
+    std::istringstream f(excludeNames);
+    std::string s;
+    while (getline(f, s, ',')) {
+        s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
+        if (!s.empty()) {
+            g_ExcludeBotNames.push_back(s);
+        }
+    }
 
     // Load the bot level restrictions.
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
@@ -737,6 +751,32 @@ static bool IsBotSafeForLevelReset(Player* bot)
     return true;
 }
 
+/**
+ * @brief Checks if a given bot is in the exclusion list for bracket processing.
+ *
+ * This function determines whether the provided bot's name matches any entry in the global
+ * exclusion list `g_ExcludeBotNames`, which is populated from the BotLevelBrackets.ExcludeNames config.
+ * If a match is found, this bot will not be considered for any bracket checks or level resets.
+ *
+ * @param bot Pointer to the Player object representing the bot to check.
+ * @return true if the bot is excluded from bracket processing, false otherwise.
+ */
+static bool IsBotExcluded(Player* bot)
+{
+    if (!bot)
+    {
+        return false;
+    }
+    const std::string& name = bot->GetName();
+    for (const auto& excluded : g_ExcludeBotNames)
+    {
+        if (excluded == name)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
 /**
  * @brief Processes the pending level reset requests for player bots.
@@ -788,6 +828,12 @@ static void ProcessPendingLevelResets()
                 continue;
             }
 
+            if (IsBotExcluded(bot))
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
             int targetRange = it->targetRange;
             if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
             {
@@ -831,6 +877,11 @@ static void ProcessPendingLevelResets()
  */
 static int GetOrFlagPlayerBracket(Player* player)
 {
+    if (IsPlayerBot(player) && IsBotExcluded(player))
+    {
+        return -1;
+    }
+
     int rangeIndex = GetLevelRangeIndex(player->GetLevel(), player->GetTeamId());
     if (rangeIndex >= 0)
     {
@@ -1169,6 +1220,14 @@ public:
                 if (g_BotDistFullDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Skipping player '{}' as they are not a random bot.", player->GetName());
+                }
+                continue;
+            }
+            if (IsBotExcluded(player))
+            {
+                if (g_BotDistFullDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Skipping excluded bot '{}'.", player->GetName());
                 }
                 continue;
             }

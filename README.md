@@ -85,6 +85,7 @@ BotLevelBrackets.Dynamic.SyncFactions      | Enables synchronized brackets and w
 BotLevelBrackets.IgnoreFriendListed           | Ignores bots that are on real players' friend lists from any bracket calculations.                                              | 1       | 0 (off) / 1 (on)
 BotLevelBrackets.IgnoreGuildBotsWithRealPlayers | Excludes bots in a guild with at least one real (non-bot) player online from adjustments.                                       | 1       | 0 (disabled) / 1 (enabled)
 BotLevelBrackets.NumRanges                     | Number of level brackets used for bot distribution. Both factions must have the same number defined.                             | 9       | Positive Integer
+BotLevelBrackets.ExcludeNames                  | Comma-separated list of case insensitive bot names to exclude from all bracket checks.                                                            |         | String
 
 **IMPORTANT:** If you extend the number of brackets beyond the default 9, you must update both your `mod_player_bot_level_brackets.conf` file and the accompanying `mod_player_bot_level_brackets.conf.dist` file to include configuration lines for the additional ranges (e.g. Range10, Range11, etc.), ensuring that the sum of the Pct values remains 100.
 
