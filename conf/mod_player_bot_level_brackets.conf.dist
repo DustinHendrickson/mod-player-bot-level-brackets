@@ -77,33 +77,14 @@ BotLevelBrackets.NumRanges = 9
 #                     Valid values: 0 (off) / 1 (on)
 BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
 
-#
-#    BotLevelBrackets.Dynamic.RealPlayerWeight
-#        Description: This setting controls how much extra weight is given to brackets (level ranges) that contain real (non-bot) players, when dynamic distribution is enabled.
-#                     The higher you set this value, the more bots will move to the same level brackets where real players are currently found.
-#                     A value of 0.0 means bots always distribute evenly across all brackets, regardless of where players are. The default value of 1.0 gives a balanced, moderate effect.
-#                     Raising this to 2.0, 3.0, or higher will make bots concentrate more heavily in brackets with real players.
-#                     Lowering to 0.25 or 0.5 will make the effect much weaker, keeping bots more spread out.
-#                     The value is a multiplier (not a percent): 0.0 = no extra effect, 1.0 = normal effect, 5.0 = stronger effect.
-#                     Experiment based on your total bot count and real player counts to find a good number for your server.
-#        What to expect:
-#          - With 1.0 (default): If a bracket has 20% of real players, it will get about 20% or a little more of the bots.
-#          - With 0.0: Every bracket always gets the same number of bots, no matter where real players are.
-#          - With 5.0: A bracket with 20% of real players might get 50% of the bots (bots "pile up" with real players).
-#        Examples:
-#          Example A: You have 10 real players, and 6 of them are level 70-79 (bracket 8). With 1.0, about 30-40% of bots will move to bracket 8. With 3.0, over 60% of bots might move there.
-#          Example B: All real players are low level. With a high weight (3.0+), almost all bots will stay low level too.
-#        Default:      1.0
-BotLevelBrackets.Dynamic.RealPlayerWeight = 1.0
-
-#
 #    BotLevelBrackets.Dynamic.RealPlayerWeight
 #        Description: This setting controls how much extra weight is given to brackets (level ranges) that contain real (non-bot) players, when dynamic distribution is enabled.
 #                     The higher you set this value, the more bots will move to the same level brackets where real players are found, but the effect is *gentle*, not extreme.
 #                     A value of 0.0 means bots always distribute evenly across all brackets, regardless of where players are. The default value of 1.0 gives a mild, balanced effect.
-#                     Raising this to 3.0, 5.0, or higher will make bots concentrate more in brackets with real players, but even at 5.0, no bracket gets more than ~22% with all players present.
+#                     Raising this to 3.0, 5.0, or higher will make bots concentrate more in brackets with real players.
 #                     The value is a multiplier (not a percent): 0.0 = no extra effect, 1.0 = default, 3.0 = stronger, 5.0 = strong but not extreme.
 #                     Experiment based on your total bot count and real player counts to find a good number for your server.
+#                     If you want a large congestion of bots in your level bracket for solo play I recommend 10-15 for RealPlayerWeight.
 #        What to expect:
 #          - With 1.0 (default): If 6/10 real players are in one bracket, that bracket gets about 12.77% of bots. All-empty brackets get about 10.69% each.
 #          - With 3.0: Same scenario: bracket gets about 15.73% of bots. All-empty brackets: 9.93% each.
