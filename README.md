@@ -21,7 +21,7 @@ Features
 - **Death Knight Level Safeguard:**  
   Death Knight bots are enforced a minimum level of 55.
 - **Guild Bot Exclusion:**  
-  When enabled, bots that are in a guild with at least one real (non-bot) player online are excluded from bot bracket calculations and will not be adjusted.
+  When enabled, bots that are in a guild with at least one real (non-bot) player are excluded from bot bracket calculations and will not be adjusted. This uses a persistent tracking system that monitors guild membership changes and updates the status every 10 minutes, ensuring consistent behavior regardless of whether real players are online or offline.
 - **Friend List Exclusion:**  
   When enabled, bots that are on real players' friend lists are excluded from level bracket adjustments.
 - **Dynamic Distribution:**  

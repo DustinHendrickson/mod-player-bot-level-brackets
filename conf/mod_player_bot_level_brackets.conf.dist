@@ -37,6 +37,14 @@ BotLevelBrackets.CheckFrequency = 300
 BotLevelBrackets.CheckFlaggedFrequency = 15
 
 #
+#    BotLevelBrackets.GuildTrackingUpdateFrequency
+#        Description: The frequency (in seconds) at which the guild tracking data is updated to check for changes 
+#                     in guild membership and real player status. This determines how often the persistent guild 
+#                     tracking system refreshes its data.
+#        Default:     600 (10 minutes)
+BotLevelBrackets.GuildTrackingUpdateFrequency = 600
+
+#
 #    BotLevelBrackets.IgnoreGuildBotsWithRealPlayers
 #        Description: When enabled, bots that are in a guild with at least one real (non-bot) player online are excluded 
 #                     from bot bracket calculations and will not be level changed or flagged.
