@@ -51,6 +51,13 @@ BotLevelBrackets.FlaggedProcessLimit = 5
 BotLevelBrackets.IgnoreGuildBotsWithRealPlayers = 1
 
 #
+#    BotLevelBrackets.GuildTrackerUpdateFrequency
+#        Description: The frequency (in seconds) at which the persistent guild tracker database is updated.
+#                     This tracks which guilds have real players even when they are offline.
+#        Default:     600 (10 minutes)
+BotLevelBrackets.GuildTrackerUpdateFrequency = 600
+
+#
 #    BotLevelBrackets.IgnoreFriendListed
 #         Description: Ignore bots that are on real players friend's lists from any brackets.
 #         Default:     1 (enabled)

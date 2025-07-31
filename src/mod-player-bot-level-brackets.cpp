@@ -54,6 +54,7 @@ static std::vector<LevelRangeConfig> g_HordeLevelRanges;
 
 static uint32 g_BotDistCheckFrequency = 300; // in seconds
 static uint32 g_BotDistFlaggedCheckFrequency = 15; // in seconds
+static uint32 g_GuildTrackerUpdateFrequency = 600; // in seconds (10 minutes)
 static bool   g_BotDistFullDebugMode      = false;
 static bool   g_BotDistLiteDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
@@ -76,6 +77,9 @@ static std::vector<std::string> g_ExcludeBotNames;
 
 // Array for real player guild IDs.
 std::unordered_set<uint32> g_RealPlayerGuildIds;
+
+// Persistent guild tracker - stores guild IDs that have real players (from database)
+std::unordered_set<uint32> g_PersistentRealPlayerGuildIds;
 
 struct PendingResetEntry
 {
@@ -108,6 +112,7 @@ static void LoadBotLevelBracketsConfig()
     g_BotDistLiteDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.LiteDebugMode", false);
     g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFrequency", 300);
     g_BotDistFlaggedCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFlaggedFrequency", 15);
+    g_GuildTrackerUpdateFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.GuildTrackerUpdateFrequency", 600);
     g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.Dynamic.UseDynamicDistribution", false);
     g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.Dynamic.RealPlayerWeight", 1.0f);
     g_SyncFactions = sConfigMgr->GetOption<bool>("BotLevelBrackets.Dynamic.SyncFactions", false);
@@ -342,6 +347,122 @@ static void LoadSocialFriendList()
 
 
 /**
+ * @brief Loads the persistent guild tracker data from the database.
+ *
+ * This function queries the bot_level_brackets_guild_tracker table to load all guild IDs
+ * that have real players. This provides persistent storage of guild status even when
+ * real players are offline. The data is loaded into g_PersistentRealPlayerGuildIds.
+ */
+static void LoadPersistentGuildTracker()
+{
+    g_PersistentRealPlayerGuildIds.clear();
+    QueryResult result = CharacterDatabase.Query("SELECT guild_id FROM bot_level_brackets_guild_tracker WHERE has_real_players = 1");
+    
+    if (!result)
+    {
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] No guilds with real players found in persistent storage.");
+        }
+        return;
+    }
+    
+    if (g_BotDistFullDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Loading persistent guild tracker data from database...");
+    }
+    
+    do
+    {
+        uint32 guildId = result->Fetch()->Get<uint32>();
+        g_PersistentRealPlayerGuildIds.insert(guildId);
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] Loaded guild {} as having real players.", guildId);
+        }
+    } while (result->NextRow());
+    
+    if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Loaded {} guilds with real players from persistent storage.", g_PersistentRealPlayerGuildIds.size());
+    }
+}
+
+
+/**
+ * @brief Updates the persistent guild tracker database with current guild status.
+ *
+ * This function scans all characters in the database to determine which guilds have real players
+ * (non-bot players) and updates the bot_level_brackets_guild_tracker table accordingly.
+ * It runs periodically to ensure the database reflects the current state of guild memberships.
+ */
+static void UpdatePersistentGuildTracker()
+{
+    if (g_BotDistFullDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Starting persistent guild tracker update...");
+    }
+    
+    // Query to get all guilds and check if they have real players
+    QueryResult result = CharacterDatabase.Query(
+        "SELECT DISTINCT g.guildid, "
+        "CASE WHEN EXISTS("
+        "    SELECT 1 FROM characters c "
+        "    WHERE c.guid = gm.guid "
+        "    AND c.guid NOT IN ("
+        "        SELECT owner FROM ai_playerbot_random_bots"
+        "    )"
+        ") THEN 1 ELSE 0 END as has_real_players "
+        "FROM guild g "
+        "LEFT JOIN guild_member gm ON g.guildid = gm.guildid"
+    );
+    
+    if (!result)
+    {
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] No guild data found for persistent tracker update.");
+        }
+        return;
+    }
+    
+    std::unordered_set<uint32> currentRealPlayerGuilds;
+    uint32 updatedCount = 0;
+    
+    do
+    {
+        uint32 guildId = result->Fetch()->Get<uint32>();
+        bool hasRealPlayers = result->Fetch()->Get<bool>();
+        
+        if (hasRealPlayers)
+        {
+            currentRealPlayerGuilds.insert(guildId);
+        }
+        
+        // Update or insert the record
+        CharacterDatabase.Execute(
+            "INSERT INTO bot_level_brackets_guild_tracker (guild_id, has_real_players) "
+            "VALUES ({}, {}) "
+            "ON DUPLICATE KEY UPDATE has_real_players = VALUES(has_real_players)",
+            guildId, hasRealPlayers ? 1 : 0
+        );
+        
+        updatedCount++;
+        
+    } while (result->NextRow());
+    
+    // Update our in-memory cache
+    g_PersistentRealPlayerGuildIds = currentRealPlayerGuilds;
+    
+    if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Updated {} guild records in persistent tracker. {} guilds have real players.", 
+                 updatedCount, g_PersistentRealPlayerGuildIds.size());
+    }
+}
+
+
+/**
  * @brief Populates the global set of real player guild IDs from the provided player map.
  *
  * Iterates through the given map of players, and for each player that is not a bot and is currently in the world,
@@ -530,7 +651,8 @@ static bool BotInGuildWithRealPlayer(Player* bot)
     {
         return false;
     }
-    return g_RealPlayerGuildIds.count(guildId) > 0;
+    // Check both online real players and persistent database storage
+    return g_RealPlayerGuildIds.count(guildId) > 0 || g_PersistentRealPlayerGuildIds.count(guildId) > 0;
 }
 
 
@@ -979,7 +1101,7 @@ static int GetOrFlagPlayerBracket(Player* player)
 class BotLevelBracketsWorldScript : public WorldScript
 {
 public:
-    BotLevelBracketsWorldScript() : WorldScript("BotLevelBracketsWorldScript"), m_timer(0), m_flaggedTimer(0) { }
+    BotLevelBracketsWorldScript() : WorldScript("BotLevelBracketsWorldScript"), m_timer(0), m_flaggedTimer(0), m_guildTrackerTimer(0) { }
 
     /**
      * @brief Called when the module is started up.
@@ -994,6 +1116,7 @@ public:
     {
         LoadBotLevelBracketsConfig();
         LoadSocialFriendList();
+        LoadPersistentGuildTracker();
         if (!g_BotLevelBracketsEnabled)
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Module disabled via configuration.");
@@ -1048,6 +1171,7 @@ public:
         
         m_timer += diff;
         m_flaggedTimer += diff;
+        m_guildTrackerTimer += diff;
 
         if (m_flaggedTimer >= g_BotDistFlaggedCheckFrequency * 1000)
         {
@@ -1057,6 +1181,16 @@ public:
             }
             ProcessPendingLevelResets();
             m_flaggedTimer = 0;
+        }
+
+        if (m_guildTrackerTimer >= g_GuildTrackerUpdateFrequency * 1000)
+        {
+            if (g_BotDistFullDebugMode)
+            {
+                LOG_INFO("server.loading", "[BotLevelBrackets] Guild Tracker Update Triggering.");
+            }
+            UpdatePersistentGuildTracker();
+            m_guildTrackerTimer = 0;
         }
 
         if (m_timer < g_BotDistCheckFrequency * 1000)
@@ -1562,6 +1696,7 @@ public:
 private:
     uint32 m_timer;         // For distribution adjustments
     uint32 m_flaggedTimer;  // For pending reset checks
+    uint32 m_guildTrackerTimer; // For guild tracker updates
 };
 
 
