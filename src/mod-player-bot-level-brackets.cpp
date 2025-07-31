@@ -19,6 +19,7 @@
 #include "QueryResult.h"
 #include <string>
 #include <unordered_map>
+#include "Player.h"
 
 // Forward declarations.
 static bool IsAlliancePlayerBot(Player* bot);
@@ -43,9 +44,9 @@ static uint8 g_NumRanges = 9;
 static uint8 g_RandomBotMinLevel = 1;
 static uint8 g_RandomBotMaxLevel = 80;
 
-// New configuration option to enable/disable the mod. Default is true.
+// Enable/disable the mod. Default is true.
 static bool g_BotLevelBracketsEnabled = true;
-// New configuration option to ignore bots in guilds with a real player online. Default is true.
+// Ignore bots in guilds with a real player online. Default is true.
 static bool g_IgnoreGuildBotsWithRealPlayers = true;
 
 // Use vectors to store the level ranges.
@@ -58,9 +59,15 @@ static bool   g_BotDistFullDebugMode      = false;
 static bool   g_BotDistLiteDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
 static bool   g_IgnoreFriendListed = true;
+static uint32 g_FlaggedProcessLimit = 5; // 0 = unlimited
 
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
+
+// If true, synchronize bracket logic and real player influence across both factions.
+// This option requires both Alliance and Horde bracket definitions to match perfectly.
+// When enabled, all real players (regardless of faction) affect the dynamic distribution for both factions.
+static bool g_SyncFactions = false;
 
 // Array for character social list friends
 std::vector<int> SocialFriendsList;
@@ -85,6 +92,18 @@ static void LoadBotLevelBracketsConfig()
     g_UseDynamicDistribution = sConfigMgr->GetOption<bool>("BotLevelBrackets.UseDynamicDistribution", false);
     g_RealPlayerWeight = sConfigMgr->GetOption<float>("BotLevelBrackets.RealPlayerWeight", 1.0f);
     g_IgnoreFriendListed = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreFriendListed", true);
+    g_FlaggedProcessLimit = sConfigMgr->GetOption<uint32>("BotLevelBrackets.FlaggedProcessLimit", 5);
+
+    std::string excludeNames = sConfigMgr->GetOption<std::string>("BotLevelBrackets.ExcludeNames", "");
+    g_ExcludeBotNames.clear();
+    std::istringstream f(excludeNames);
+    std::string s;
+    while (getline(f, s, ',')) {
+        s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
+        if (!s.empty()) {
+            g_ExcludeBotNames.push_back(s);
+        }
+    }
 
     // Load the bot level restrictions.
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
@@ -113,15 +132,168 @@ static void LoadBotLevelBracketsConfig()
         g_HordeLevelRanges[i].desiredPercent = static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.Horde.Range" + idx + ".Pct", 11));
     }
 
+    // If SyncFactions is enabled, ensure bracket definitions match exactly for both factions.
+    // Any mismatch results in immediate server shutdown with an error message.
+    if (g_SyncFactions) {
+        for (uint8 i = 0; i < g_NumRanges; ++i) {
+            if (g_AllianceLevelRanges[i].lower != g_HordeLevelRanges[i].lower ||
+                g_AllianceLevelRanges[i].upper != g_HordeLevelRanges[i].upper) {
+                LOG_ERROR("server.loading", "[BotLevelBrackets] FATAL: Bracket mismatch detected between factions at index {}. "
+                    "Alliance: {}-{}, Horde: {}-{}. "
+                    "When SyncFactions is enabled, both bracket number and min/max levels must match exactly. "
+                    "Check your configuration.", 
+                    i, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, 
+                    g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper);
+                std::terminate();
+            }
+        }
+    }
+
     ClampAndBalanceBrackets();
 }
 
+
 // -----------------------------------------------------------------------------
-// Loads the friend guid(s) from character_social into array
+// BOT DETECTION HELPERS
 // -----------------------------------------------------------------------------
+/**
+ * @brief Checks if the given player is a bot.
+ *
+ * This function checks if the provided Player pointer is valid and if it has an associated PlayerbotAI instance
+ * that indicates it is a bot. It returns true if the player is a bot, false otherwise.
+ *
+ * @param player Pointer to the Player object to check.
+ * @return true if the player is a bot, false otherwise.
+ */
+static bool IsPlayerBot(Player* player)
+{
+    if (!player)
+    {
+        return false;
+    }
+    PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(player);
+    return botAI && botAI->IsBotAI();
+}
+
+
+/**
+ * @brief Checks if the given player is a random bot.
+ *
+ * This function verifies whether the provided Player pointer refers to a random bot
+ * managed by the RandomPlayerbotMgr. If the player pointer is null, it returns false.
+ *
+ * @param player Pointer to the Player object to check.
+ * @return true if the player is a random bot, false otherwise.
+ */
+static bool IsPlayerRandomBot(Player* player)
+{
+    if (!player)
+    {
+        return false;
+    }
+    return sRandomPlayerbotMgr->IsRandomBot(player);
+}
+
+
+/**
+ * @brief Checks if the given Player bot belongs to the Alliance team.
+ *
+ * This function verifies that the provided Player pointer is valid and
+ * determines whether the bot's team ID corresponds to the Alliance faction.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is a member of the Alliance team, false otherwise.
+ */
+static bool IsAlliancePlayerBot(Player* bot)
+{
+    return bot && (bot->GetTeamId() == TEAM_ALLIANCE);
+}
+
+
+/**
+ * @brief Checks if the given Player bot belongs to the Horde team.
+ *
+ * This function verifies that the provided Player pointer is valid and
+ * determines whether the bot's team ID corresponds to the Horde faction.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is a member of the Horde team, false otherwise.
+ */
+static bool IsHordePlayerBot(Player* bot)
+{
+    return bot && (bot->GetTeamId() == TEAM_HORDE);
+}
+
+
+/**
+ * @brief Logs the number of player bots at each level if full debug mode is enabled.
+ *
+ * This function iterates through all players in the world, counts the number of bots at each level,
+ * and logs the results. Only bots that are currently in the world are considered. The logging occurs
+ * only if the global debug mode flag `g_BotDistFullDebugMode` is set to true.
+ */
+static void LogAllBotLevels()
+{
+    if (g_BotDistFullDebugMode)
+    {
+        std::map<uint8, uint32> botLevelCount;
+        for (auto const& itr : ObjectAccessor::GetPlayers())
+        {
+            Player* player = itr.second;
+            if (!player || !player->IsInWorld())
+            {
+                continue;
+            }
+            if (!IsPlayerBot(player))
+            {
+                continue;
+            }
+            botLevelCount[player->GetLevel()]++;
+        }
+        for (const auto& entry : botLevelCount)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] Level {}: {} bots", entry.first, entry.second);
+        }
+    }
+}
+
+
+/**
+ * @brief Removes a bot from the list of pending level resets.
+ *
+ * This function searches the global g_PendingLevelResets container for any entries
+ * that match the provided bot's GUID and removes them. It is used to ensure that
+ * a bot is no longer scheduled for a pending level reset.
+ *
+ * @param bot Pointer to the Player object representing the bot to remove.
+ */
+static void RemoveBotFromPendingResets(Player* bot)
+{
+    ObjectGuid guid = bot->GetGUID();
+    g_PendingLevelResets.erase(
+        std::remove_if(
+            g_PendingLevelResets.begin(),
+            g_PendingLevelResets.end(),
+            [guid](const PendingResetEntry& entry) { return entry.botGuid == guid; }
+        ),
+        g_PendingLevelResets.end()
+    );
+}
+
+
+/**
+ * @brief Loads the list of social friend GUIDs from the database into the global g_SocialFriendsList.
+ *
+ * This function clears the existing g_SocialFriendsList and queries the CharacterDatabase
+ * for all GUIDs marked as friends (flags = 1) in the character_social table. Each retrieved
+ * GUID is added to the g_SocialFriendsList vector. If full debug mode is enabled, the function
+ * logs the loading process and each GUID added.
+ *
+ * The function returns immediately if the query fails or if no results are found.
+ */
 static void LoadSocialFriendList()
 {
-    SocialFriendsList.clear();
+    g_SocialFriendsList.clear();
     QueryResult result = CharacterDatabase.Query("SELECT friend FROM character_social WHERE flags = 1");
 
     if (!result)
@@ -140,7 +312,7 @@ static void LoadSocialFriendList()
     do
     {
         uint32 socialFriendGUID = result->Fetch()->Get<uint32>();
-        SocialFriendsList.push_back(socialFriendGUID);
+        g_SocialFriendsList.push_back(socialFriendGUID);
         if (g_BotDistFullDebugMode)
         {
             LOG_INFO("server.load", "[BotLevelBrackets] Adding GUID {} to Social Friend List", socialFriendGUID);
@@ -335,16 +507,43 @@ static int GetLevelRangeIndex(uint8 level, uint8 teamID)
     return -1;
 }
 
-// Returns a random level within the provided range.
+
+/**
+ * @brief Returns a random level within the specified range.
+ *
+ * This function generates a random unsigned 8-bit integer (uint8) between the lower and upper bounds
+ * (inclusive) defined in the provided LevelRangeConfig structure.
+ *
+ * @param range The LevelRangeConfig structure containing the lower and upper bounds for the level range.
+ * @return uint8 A random level within the specified range [range.lower, range.upper].
+ */
 static uint8 GetRandomLevelInRange(const LevelRangeConfig& range)
 {
     return urand(range.lower, range.upper);
 }
 
-// Adjusts a bot's level by selecting a random level within the target range.
+
+/**
+ * @brief Adjusts the level of a player bot to fit within a specified level range bracket.
+ *
+ * This function ensures that the given bot is valid, in the world, and not in the process of logging out or being removed.
+ * It then checks if the target range index is valid and, if the bot is mounted, dismounts it.
+ * For Death Knight bots, it enforces a minimum level of 55, skipping adjustment if the target range is below this threshold.
+ * The bot's level is then randomized within the specified range, and the bot is re-randomized using PlayerbotFactory.
+ * Debug information is logged if enabled, and a system message is sent to the bot to notify about the level reset.
+ *
+ * @param bot Pointer to the Player object representing the bot to adjust.
+ * @param targetRangeIndex Index of the target level range in the factionRanges array.
+ * @param factionRanges Pointer to an array of LevelRangeConfig structures defining level brackets for the bot's faction.
+ */
 static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRangeConfig* factionRanges)
 {
-    if (!bot || targetRangeIndex < 0 || targetRangeIndex >= g_NumRanges)
+    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+    {
+        return;
+    }
+    
+    if (targetRangeIndex < 0 || targetRangeIndex >= g_NumRanges)
     {
         return;
     }
@@ -463,7 +662,7 @@ static void LogAllBotLevels()
 // -----------------------------------------------------------------------------
 static bool BotInGuildWithRealPlayer(Player* bot)
 {
-    if (!bot)
+    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
     {
         return false;
     }
@@ -491,18 +690,14 @@ static bool BotInGuildWithRealPlayer(Player* bot)
 
 static bool BotInFriendList(Player* bot)
 {
-    if (!bot)
+    if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
     {
         return false;
     }
 
-    for (size_t i = 0; i < SocialFriendsList.size(); ++i)
+    for (size_t i = 0; i < g_SocialFriendsList.size(); ++i)
     {
-        if (g_BotDistFullDebugMode)
-        {
-            LOG_INFO("server.loading", "[BotLevelBrackets] Check bot {} against SocialFriendsList Array Character GUID {}", bot->GetName(), SocialFriendsList[i]);
-        }
-        if (SocialFriendsList[i] == bot->GetGUID().GetRawValue())
+        if (g_SocialFriendsList[i] == bot->GetGUID().GetRawValue())
         {
             if (g_BotDistFullDebugMode)
             {
@@ -514,6 +709,24 @@ static bool BotInFriendList(Player* bot)
     return false;
 }
 
+
+/**
+ * @brief Clamps and balances the level brackets for Alliance and Horde bot distributions.
+ *
+ * This function ensures that the lower and upper bounds of each level bracket for both Alliance and Horde
+ * are within the allowed minimum and maximum bot levels. If a bracket's lower bound exceeds its upper bound,
+ * its desired percentage is set to zero. After clamping, the function checks if the sum of desired percentages
+ * for each faction equals 100. If not, and the total is greater than zero, it auto-adjusts the percentages
+ * upwards (one at a time, round-robin) until the sum reaches 100. Debug information is logged if enabled.
+ *
+ * Globals used:
+ * - g_AllianceLevelRanges: Array of Alliance level brackets.
+ * - g_HordeLevelRanges: Array of Horde level brackets.
+ * - g_NumRanges: Number of level brackets.
+ * - g_RandomBotMinLevel: Minimum allowed bot level.
+ * - g_RandomBotMaxLevel: Maximum allowed bot level.
+ * - g_BotDistFullDebugMode: Debug mode flag.
+ */
 static void ClampAndBalanceBrackets()
 {
     for (uint8 i = 0; i < g_NumRanges; ++i)
@@ -593,12 +806,28 @@ static void ClampAndBalanceBrackets()
     }
 }
 
-// -----------------------------------------------------------------------------
-// SAFETY CHECKS FOR LEVEL RESET
-// -----------------------------------------------------------------------------
+
+/**
+ * @brief Checks if a bot is in a safe state to perform a level reset.
+ *
+ * This function verifies several conditions to ensure that the provided bot is safe for a level reset operation.
+ * The checks include:
+ * - The bot pointer and its session are valid and not in the process of logging out or being removed from the world.
+ * - The bot is currently in the world and alive.
+ * - The bot is not in combat.
+ * - The bot is not in a battleground, arena, random dungeon, or battleground queue.
+ * - The bot is not in flight.
+ * - If the bot is in a group, all group members must also be bots.
+ *
+ * If any of these conditions are not met, the function returns false. If debugging is enabled via
+ * g_BotDistFullDebugMode, detailed log messages are generated for each failure case.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is safe for level reset, false otherwise.
+ */
 static bool IsBotSafeForLevelReset(Player* bot)
 {
-    if (!bot)
+    if (!bot || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
     {
         if (g_BotDistFullDebugMode)
         {
@@ -664,16 +893,51 @@ static bool IsBotSafeForLevelReset(Player* bot)
     return true;
 }
 
-// Global container to hold bots flagged for pending level reset.
-// Each entry is a pair: the bot and the target level range index along with a pointer to the faction config.
-struct PendingResetEntry
+/**
+ * @brief Checks if a given bot is in the exclusion list for bracket processing.
+ *
+ * This function determines whether the provided bot's name matches any entry in the global
+ * exclusion list `g_ExcludeBotNames`, which is populated from the BotLevelBrackets.ExcludeNames config.
+ * If a match is found, this bot will not be considered for any bracket checks or level resets.
+ *
+ * @param bot Pointer to the Player object representing the bot to check.
+ * @return true if the bot is excluded from bracket processing, false otherwise.
+ */
+static bool IsBotExcluded(Player* bot)
 {
-    Player* bot;
-    int targetRange;
-    const LevelRangeConfig* factionRanges;
-};
-static std::vector<PendingResetEntry> g_PendingLevelResets;
+    if (!bot)
+    {
+        return false;
+    }
+    const std::string& name = bot->GetName();
+    for (const auto& excluded : g_ExcludeBotNames)
+    {
+        if (excluded == name)
+        {
+            return true;
+        }
+    }
+    return false;
+}
 
+/**
+ * @brief Processes the pending level reset requests for player bots.
+ *
+ * This function iterates through the global list of pending level resets (`g_PendingLevelResets`)
+ * and attempts to reset the level of each eligible bot to a specified range. The function enforces
+ * a configurable limit (`g_FlaggedProcessLimit`) on the number of resets processed per cycle.
+ *
+ * Bots are skipped and removed from the pending list if:
+ *   - The bot is not found or not in the world.
+ *   - The bot's session is invalid, logging out, or being removed from the world.
+ *   - The bot is in a guild with real players and `g_IgnoreGuildBotsWithRealPlayers` is enabled.
+ *   - The bot is in a friend list and `g_IgnoreFriendListed` is enabled.
+ *
+ * If a bot is eligible and safe for a level reset, its level is adjusted to the target range using
+ * `AdjustBotToRange`. Debug information is logged if `g_BotDistFullDebugMode` is enabled.
+ *
+ * The function returns immediately if there are no pending resets.
+ */
 static void ProcessPendingLevelResets()
 {
     if (g_BotDistFullDebugMode)
@@ -685,42 +949,81 @@ static void ProcessPendingLevelResets()
         return;
     }
 
+    // Limit the number of resets processed in one cycle if configured.
+    uint32 processed = 0;
     for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end(); )
-    {
-        Player* bot = it->bot;
-        int targetRange = it->targetRange;
-        if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
         {
-            it = g_PendingLevelResets.erase(it);
-            continue;
-        }
-        if (g_IgnoreFriendListed && BotInFriendList(bot))
-        {
-            it = g_PendingLevelResets.erase(it);
-            continue;
-        }
-        if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
-        {
-            AdjustBotToRange(bot, targetRange, it->factionRanges);
-            if (g_BotDistFullDebugMode)
+            if (g_FlaggedProcessLimit > 0 && processed >= g_FlaggedProcessLimit)
+                break;
+
+            Player* bot = ObjectAccessor::FindPlayer(it->botGuid);
+            
+            if (!bot)
             {
-                LOG_INFO("server.loading", "[BotLevelBrackets] Bot '{}' successfully reset to level range {}-{}.", bot->GetName(), it->factionRanges[targetRange].lower, it->factionRanges[targetRange].upper);
+                it = g_PendingLevelResets.erase(it);
+                continue;
             }
-            it = g_PendingLevelResets.erase(it);
+
+            if (!bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
+            if (IsBotExcluded(bot))
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
+            int targetRange = it->targetRange;
+            if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
+            if (g_IgnoreFriendListed && BotInFriendList(bot))
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
+            if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
+            {
+                AdjustBotToRange(bot, targetRange, it->factionRanges);
+                if (g_BotDistFullDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Bot '{}' successfully reset to level range {}-{}.", bot->GetName(), it->factionRanges[targetRange].lower, it->factionRanges[targetRange].upper);
+                }
+                it = g_PendingLevelResets.erase(it);
+                ++processed;
+            }
+            else
+            {
+                ++it;
+            }
         }
-        else
-        {
-            ++it;
-        }
-    }
 }
 
-// This function returns a valid bracket index for the given player's level.
-// If the player's level is out of range (GetLevelRangeIndex returns -1),
-// it computes the closest valid bracket using the provided factionRanges,
-// flags the player for a pending reset by adding it to g_PendingLevelResets,
+
+/**
+ * @brief Determines the level bracket index for a given player or flags the player for a level reset if not in any bracket.
+ *
+ * This function attempts to find the appropriate level range (bracket) for the specified player based on their level and faction.
+ * If the player is not currently within any defined bracket, the function finds the closest bracket and flags the player for a level reset,
+ * ensuring that each player is only flagged once. The function returns the index of the bracket if found, or -1 if the player is not in any bracket.
+ *
+ * @param player Pointer to the Player object whose bracket is to be determined.
+ * @return int The index of the level bracket if found, otherwise -1.
+ */
 static int GetOrFlagPlayerBracket(Player* player)
 {
+    if (IsPlayerBot(player) && IsBotExcluded(player))
+    {
+        return -1;
+    }
+
     int rangeIndex = GetLevelRangeIndex(player->GetLevel(), player->GetTeamId());
     if (rangeIndex >= 0)
     {
@@ -768,9 +1071,10 @@ static int GetOrFlagPlayerBracket(Player* player)
     if (targetRange >= 0)
     {
         bool alreadyFlagged = false;
+        ObjectGuid guid = player->GetGUID();
         for (const auto &entry : g_PendingLevelResets)
         {
-            if (entry.bot == player)
+            if (entry.botGuid == guid)
             {
                 alreadyFlagged = true;
                 break;
@@ -778,21 +1082,56 @@ static int GetOrFlagPlayerBracket(Player* player)
         }
         if (!alreadyFlagged)
         {
-            g_PendingLevelResets.push_back({player, targetRange, factionRanges});
+            g_PendingLevelResets.push_back({guid, targetRange, factionRanges});
         }
     }
 
     return -1;
 }
 
+
 // -----------------------------------------------------------------------------
 // WORLD SCRIPT: Bot Level Distribution with Faction Separation
 // -----------------------------------------------------------------------------
+/**
+ * @class BotLevelBracketsWorldScript
+ * @brief WorldScript implementation for dynamic bot level bracket distribution in AzerothCore.
+ *
+ * This script manages the distribution of player bots across predefined level brackets for both Alliance and Horde factions.
+ * It dynamically adjusts the desired percentage of bots in each bracket based on the real player population, ensuring a balanced
+ * and realistic distribution of bots throughout the server. The script also handles pending level resets for bots to move them
+ * between brackets as needed.
+ *
+ * Key Features:
+ * - Loads configuration and social data on startup.
+ * - Periodically recalculates desired bot distribution based on real player bracket counts.
+ * - Supports both synchronized and separate faction weighting modes.
+ * - Efficiently redistributes surplus bots to underpopulated brackets, flagging them for level reset.
+ * - Skips bots in guilds with real players or on friend lists if configured.
+ * - Provides detailed debug logging for all major operations and decisions.
+ *
+ * Main Methods:
+ * - OnStartup(): Loads configuration and logs initial state.
+ * - OnUpdate(uint32 diff): Periodically checks and adjusts bot distribution, processes pending level resets.
+ *
+ * Member Variables:
+ * - m_timer: Tracks time for periodic distribution adjustments.
+ * - m_flaggedTimer: Tracks time for processing pending level resets.
+ */
 class BotLevelBracketsWorldScript : public WorldScript
 {
 public:
     BotLevelBracketsWorldScript() : WorldScript("BotLevelBracketsWorldScript"), m_timer(0), m_flaggedTimer(0), m_guildTrackingTimer(0) { }
 
+    /**
+     * @brief Called when the module is started up.
+     *
+     * This function initializes the Bot Level Brackets module by loading configuration
+     * and social friend list data. It checks if the module is enabled via configuration,
+     * and logs a message if it is disabled. If debug modes are enabled, it logs detailed
+     * information about the module's configuration, including check frequencies and
+     * desired percentage distributions for Alliance and Horde level ranges.
+     */
     void OnStartup() override
     {
         LoadBotLevelBracketsConfig();
@@ -819,6 +1158,30 @@ public:
         }
     }
 
+
+    /**
+     * @brief Periodically updates the bot level bracket distribution for player bots.
+     *
+     * This function is called on a timed interval and is responsible for:
+     * - Checking if the bot level bracket system is enabled.
+     * - Managing timers for regular and flagged bot checks.
+     * - Processing pending level resets for bots flagged for redistribution.
+     * - Gathering all players and updating guild and friend list caches.
+     * - If dynamic distribution is enabled, recalculates the desired percentage of bots per level bracket
+     *   based on the current distribution of real players, optionally syncing between factions.
+     * - For each faction (Alliance and Horde):
+     *   - Counts the actual number of bots in each level bracket.
+     *   - Determines the desired number of bots per bracket based on the calculated percentages.
+     *   - Identifies surplus bots in overpopulated brackets and flags them for level reset to underpopulated brackets,
+     *     prioritizing "safe" bots (those eligible for immediate reset) and then flagged bots.
+     *   - Updates internal counts to reflect pending redistributions.
+     * - Provides detailed debug logging if enabled, including before and after distributions.
+     *
+     * The function ensures that the distribution of player bots across level brackets remains balanced
+     * according to the current configuration and real player population, improving the gameplay experience.
+     *
+     * @param diff The time in milliseconds since the last update call.
+     */
     void OnUpdate(uint32 diff) override
     {
         if (!g_BotLevelBracketsEnabled)
@@ -857,30 +1220,30 @@ public:
         }
         m_timer = 0;
 
+        const auto& allPlayers = ObjectAccessor::GetPlayers();
+
+        LoadRealPlayerGuildIds(allPlayers);
+
         LoadSocialFriendList();
 
         if (g_UseDynamicDistribution)
         {
+            // Calculate real player bracket counts
             std::vector<int> allianceRealCounts(g_NumRanges, 0);
             std::vector<int> hordeRealCounts(g_NumRanges, 0);
             uint32 totalAllianceReal = 0;
             uint32 totalHordeReal = 0;
-            for (auto const& itr : ObjectAccessor::GetPlayers())
+
+            for (auto const& itr : allPlayers)
             {
                 Player* player = itr.second;
                 if (!player || !player->IsInWorld())
-                {
                     continue;
-                }
                 if (IsPlayerBot(player))
-                {
-                    continue; // Skip bots.
-                }
+                    continue; // Only count real players.
                 int rangeIndex = GetOrFlagPlayerBracket(player);
                 if (rangeIndex < 0)
-                {
                     continue;
-                }
                 if (player->GetTeamId() == TEAM_ALLIANCE)
                 {
                     allianceRealCounts[rangeIndex]++;
@@ -892,127 +1255,89 @@ public:
                     totalHordeReal++;
                 }
             }
+
             const float baseline = 1.0f;
             std::vector<float> allianceWeights(g_NumRanges, 0.0f);
             std::vector<float> hordeWeights(g_NumRanges, 0.0f);
-            float allianceTotalWeight = 0.0f;
-            float hordeTotalWeight = 0.0f;
-            for (int i = 0; i < g_NumRanges; ++i)
+
+            // SYNCED MODE: Real player weighting is combined for both factions, applied to both bracket tables.
+            if (g_SyncFactions)
             {
-                if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
+                uint32 totalCombinedReal = totalAllianceReal + totalHordeReal;
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    allianceWeights[i] = 0.0f;
+                    int combinedReal = allianceRealCounts[i] + hordeRealCounts[i];
+                    float weight = baseline + g_RealPlayerWeight *
+                        (totalCombinedReal > 0 ? (1.0f / float(totalCombinedReal)) : 1.0f) *
+                        log(1 + combinedReal);
+                    allianceWeights[i] = weight;
+                    hordeWeights[i] = weight;
                 }
-                else
-                {
-                    allianceWeights[i] = baseline + g_RealPlayerWeight *
-                        (totalAllianceReal > 0 ? (1.0f / totalAllianceReal) : 1.0f) *
-                        log(1 + allianceRealCounts[i]);
-                }
-
-                if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
-                {
-                    hordeWeights[i] = 0.0f;
-                }
-                else
-                {
-                    hordeWeights[i] = baseline + g_RealPlayerWeight *
-                        (totalHordeReal > 0 ? (1.0f / totalHordeReal) : 1.0f) *
-                        log(1 + hordeRealCounts[i]);
-                }
-
-                allianceTotalWeight += allianceWeights[i];
-                hordeTotalWeight += hordeWeights[i];
             }
-            for (int i = 0; i < g_NumRanges; ++i)
+            else
             {
-                g_AllianceLevelRanges[i].desiredPercent = static_cast<uint8>(round((allianceWeights[i] / allianceTotalWeight) * 100));
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+                // Separate dynamic weighting for each faction
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Dynamic Distribution - Alliance Range {}: {}-{}, Real Players: {} (weight: {:.2f}), New Desired: {}%",
-                             i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, allianceRealCounts[i], allianceWeights[i], g_AllianceLevelRanges[i].desiredPercent);
+                    if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
+                        allianceWeights[i] = 0.0f;
+                    else
+                        allianceWeights[i] = baseline + g_RealPlayerWeight *
+                            (totalAllianceReal > 0 ? (1.0f / totalAllianceReal) : 1.0f) *
+                            log(1 + allianceRealCounts[i]);
+
+                    if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
+                        hordeWeights[i] = 0.0f;
+                    else
+                        hordeWeights[i] = baseline + g_RealPlayerWeight *
+                            (totalHordeReal > 0 ? (1.0f / totalHordeReal) : 1.0f) *
+                            log(1 + hordeRealCounts[i]);
                 }
             }
 
-            uint8 sumAlliance = 0;
-            for (int i = 0; i < g_NumRanges; ++i)
+            // Helper for normalizing weights so percentages sum to 100
+            auto applyWeights = [](std::vector<LevelRangeConfig>& ranges, const std::vector<float>& weights)
             {
-                sumAlliance += g_AllianceLevelRanges[i].desiredPercent;
-            }
-            if (sumAlliance < 100 && allianceTotalWeight > 0)
-            {
-                uint8 missing = 100 - sumAlliance;
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+                float total = 0.0f;
+                for (int i = 0; i < g_NumRanges; ++i)
+                    total += weights[i];
+                int pctSum = 0;
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance normalization: current sum = {}, missing = {}", sumAlliance, missing);
+                    uint8 pct = (total > 0.0f) ? static_cast<uint8>(round((weights[i] / total) * 100)) : 0;
+                    ranges[i].desiredPercent = pct;
+                    pctSum += pct;
                 }
-                while (missing > 0)
+                // Fix rounding drift so sum = 100
+                int missing = 100 - pctSum;
+                for (int i = 0; i < g_NumRanges && missing > 0; ++i)
                 {
-                    for (int i = 0; i < g_NumRanges && missing > 0; ++i)
+                    if (ranges[i].lower <= ranges[i].upper && ranges[i].desiredPercent > 0)
                     {
-                        if (g_AllianceLevelRanges[i].lower <= g_AllianceLevelRanges[i].upper && allianceWeights[i] > 0)
-                        {
-                            g_AllianceLevelRanges[i].desiredPercent++;
-                            missing--;
-                        }
+                        ranges[i].desiredPercent++;
+                        missing--;
                     }
                 }
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance normalized percentages:");
-                    for (int i = 0; i < g_NumRanges; ++i)
-                    {
-                        LOG_INFO("server.loading", "    Range {}: {}% ({}-{})", i + 1, g_AllianceLevelRanges[i].desiredPercent,
-                                 g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper);
-                    }
-                }
-            }
-            
-            for (int i = 0; i < g_NumRanges; ++i)
-            {
-                g_HordeLevelRanges[i].desiredPercent = static_cast<uint8>(round((hordeWeights[i] / hordeTotalWeight) * 100));
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Dynamic Distribution - Horde Range {}: {}-{}, Real Players: {} (weight: {:.2f}), New Desired: {}%",
-                             i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper, hordeRealCounts[i], hordeWeights[i], g_HordeLevelRanges[i].desiredPercent);
-                }
-            }
+            };
 
-            uint8 sumHorde = 0;
-            for (int i = 0; i < g_NumRanges; ++i)
+            applyWeights(g_AllianceLevelRanges, allianceWeights);
+            applyWeights(g_HordeLevelRanges, hordeWeights);
+
+            // Debug output for new bracket percentages after normalization
+            if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
             {
-                sumHorde += g_HordeLevelRanges[i].desiredPercent;
-            }
-            if (sumHorde < 100 && hordeTotalWeight > 0)
-            {
-                uint8 missing = 100 - sumHorde;
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+                for (int i = 0; i < g_NumRanges; ++i)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Horde normalization: current sum = {}, missing = {}", sumHorde, missing);
-                }
-                while (missing > 0)
-                {
-                    for (int i = 0; i < g_NumRanges && missing > 0; ++i)
-                    {
-                        if (g_HordeLevelRanges[i].lower <= g_HordeLevelRanges[i].upper && hordeWeights[i] > 0)
-                        {
-                            g_HordeLevelRanges[i].desiredPercent++;
-                            missing--;
-                        }
-                    }
-                }
-                if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Horde normalized percentages:");
-                    for (int i = 0; i < g_NumRanges; ++i)
-                    {
-                        LOG_INFO("server.loading", "    Range {}: {}% ({}-{})", i + 1, g_HordeLevelRanges[i].desiredPercent,
-                                 g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper);
-                    }
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Final Range {}: {}-{}, Alliance Desired: {}%, Horde Desired: {}%",
+                        i + 1,
+                        g_AllianceLevelRanges[i].lower,
+                        g_AllianceLevelRanges[i].upper,
+                        g_AllianceLevelRanges[i].desiredPercent,
+                        g_HordeLevelRanges[i].desiredPercent);
                 }
             }
         }
-
+        
         uint32 totalAllianceBots = 0;
         std::vector<int> allianceActualCounts(g_NumRanges, 0);
         std::vector< std::vector<Player*> > allianceBotsByRange(g_NumRanges);
@@ -1021,7 +1346,6 @@ public:
         std::vector<int> hordeActualCounts(g_NumRanges, 0);
         std::vector< std::vector<Player*> > hordeBotsByRange(g_NumRanges);
 
-        auto const& allPlayers = ObjectAccessor::GetPlayers();
         if (g_BotDistFullDebugMode)
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Starting processing of {} players.", allPlayers.size());
@@ -1051,6 +1375,14 @@ public:
                 if (g_BotDistFullDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Skipping player '{}' as they are not a random bot.", player->GetName());
+                }
+                continue;
+            }
+            if (IsBotExcluded(player))
+            {
+                if (g_BotDistFullDebugMode)
+                {
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Skipping excluded bot '{}'.", player->GetName());
                 }
                 continue;
             }
@@ -1124,125 +1456,54 @@ public:
                 if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {} ({}-{}): Desired = {}, Actual = {}.", 
-                             i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper,
-                             allianceDesiredCounts[i], allianceActualCounts[i]);
+                            i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper,
+                            allianceDesiredCounts[i], allianceActualCounts[i]);
                 }
             }
+
             for (int i = 0; i < g_NumRanges; ++i)
             {
-                if (g_BotDistFullDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] >>> Processing Alliance bots in range {}.", i + 1);
-                }
+                // Collect safe and flagged bots
                 std::vector<Player*> safeBots;
                 std::vector<Player*> flaggedBots;
                 for (Player* bot : allianceBotsByRange[i])
                 {
-                    if (IsBotSafeForLevelReset(bot))
-                    {
+                    if (IsBotSafeForLevelReset(bot)) {
                         safeBots.push_back(bot);
-                    }
-                    else
-                    {
+                    } else {
                         flaggedBots.push_back(bot);
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' is NOT safe for level reset in range {}.", 
-                                     bot->GetName(), i + 1);
-                        }
                     }
                 }
-                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !safeBots.empty())
+
+                // --------- Efficient surplus redistribution for safeBots ----------
+                // Build a list of target ranges that need bots
+                std::vector<int> targetRanges;
+                for (int j = 0; j < g_NumRanges; ++j)
+                {
+                    if (allianceActualCounts[j] < allianceDesiredCounts[j])
+                        targetRanges.push_back(j);
+                }
+                size_t targetIdx = 0;
+                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !safeBots.empty() && targetIdx < targetRanges.size())
                 {
                     Player* bot = safeBots.back();
                     safeBots.pop_back();
-                    if (g_BotDistFullDebugMode)
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    // Skip if no need (already filled by earlier loop)
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
                     {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Alliance safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
+                        targetIdx++;
+                        continue;
                     }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j] && g_AllianceLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for alliance safe bot '{}'.", bot->GetName());
-                        }
-                        break;
-                    }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting alliance bot '{}' from range {} to range {} ({}-{}).",  
-                                 bot->GetName(), i + 1, targetRange + 1, g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
-                    }
-                    AdjustBotToRange(bot, targetRange, g_AllianceLevelRanges.data());
-                    allianceActualCounts[i]--;
-                    allianceActualCounts[targetRange]++;
-                }
-                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !flaggedBots.empty())
-                {
-                    Player* bot = flaggedBots.back();
-                    flaggedBots.pop_back();
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
-                    }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j] && g_AllianceLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (allianceActualCounts[j] < allianceDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for flagged alliance bot '{}' for pending reset.", bot->GetName());
-                        }
-                        break;
-                    }
+
+                    // Only flag if not already flagged
+                    ObjectGuid botGuid = bot->GetGUID();
                     bool alreadyFlagged = false;
-                    for (auto& entry : g_PendingLevelResets)
+                    for (const auto& entry : g_PendingLevelResets)
                     {
-                        if (entry.bot == bot)
+                        if (entry.botGuid == botGuid)
                         {
                             alreadyFlagged = true;
                             break;
@@ -1250,16 +1511,61 @@ public:
                     }
                     if (!alreadyFlagged)
                     {
-                        g_PendingLevelResets.push_back({bot, targetRange, g_AllianceLevelRanges.data()});
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.", 
-                                     bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
+                                bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                         }
                     }
+                    allianceActualCounts[i]--;
+                    allianceActualCounts[targetRange]++;
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
+                        targetIdx++;
+                }
+                // --------- Efficient surplus redistribution for flaggedBots ----------
+                // Reset for flagged bots
+                targetIdx = 0;
+                while (allianceActualCounts[i] > allianceDesiredCounts[i] && !flaggedBots.empty() && targetIdx < targetRanges.size())
+                {
+                    Player* bot = flaggedBots.back();
+                    flaggedBots.pop_back();
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
+                    {
+                        targetIdx++;
+                        continue;
+                    }
+
+                    ObjectGuid botGuid = bot->GetGUID();
+                    bool alreadyFlagged = false;
+                    for (const auto& entry : g_PendingLevelResets)
+                    {
+                        if (entry.botGuid == botGuid)
+                        {
+                            alreadyFlagged = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyFlagged)
+                    {
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
+                        if (g_BotDistFullDebugMode)
+                        {
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' flagged for pending level reset to range {}-{}.", 
+                                bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
+                        }
+                    }
+                    allianceActualCounts[i]--;
+                    allianceActualCounts[targetRange]++;
+                    if (allianceActualCounts[targetRange] >= allianceDesiredCounts[targetRange])
+                        targetIdx++;
                 }
             }
         }
+
 
         // Process Horde bots.
         if (totalHordeBots > 0)
@@ -1275,125 +1581,50 @@ public:
                 if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Horde Range {} ({}-{}): Desired = {}, Actual = {}.",
-                             i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper,
-                             hordeDesiredCounts[i], hordeActualCounts[i]);
+                            i + 1, g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper,
+                            hordeDesiredCounts[i], hordeActualCounts[i]);
                 }
             }
+
             for (int i = 0; i < g_NumRanges; ++i)
             {
-                if (g_BotDistFullDebugMode)
-                {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Processing Horde bots in range {}.", i + 1);
-                }
                 std::vector<Player*> safeBots;
                 std::vector<Player*> flaggedBots;
                 for (Player* bot : hordeBotsByRange[i])
                 {
-                    if (IsBotSafeForLevelReset(bot))
-                    {
+                    if (IsBotSafeForLevelReset(bot)) {
                         safeBots.push_back(bot);
-                    }
-                    else
-                    {
+                    } else {
                         flaggedBots.push_back(bot);
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' is NOT safe for level reset in range {}.", 
-                                     bot->GetName(), i + 1);
-                        }
                     }
                 }
-                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !safeBots.empty())
+
+                // Efficient surplus redistribution for safeBots
+                std::vector<int> targetRanges;
+                for (int j = 0; j < g_NumRanges; ++j)
+                {
+                    if (hordeActualCounts[j] < hordeDesiredCounts[j])
+                        targetRanges.push_back(j);
+                }
+                size_t targetIdx = 0;
+                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !safeBots.empty() && targetIdx < targetRanges.size())
                 {
                     Player* bot = safeBots.back();
                     safeBots.pop_back();
-                    if (g_BotDistFullDebugMode)
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
                     {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Horde safe bot '{}' from range {} will be moved.", bot->GetName(), i + 1);
+                        targetIdx++;
+                        continue;
                     }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j] && g_HordeLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for safe horde bot '{}'.", bot->GetName());
-                        }
-                        break;
-                    }
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] !!!! Adjusting horde bot '{}' from range {} to range {} ({}-{}).", 
-                                 bot->GetName(), i + 1, targetRange + 1, g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
-                    }
-                    AdjustBotToRange(bot, targetRange, g_HordeLevelRanges.data());
-                    hordeActualCounts[i]--;
-                    hordeActualCounts[targetRange]++;
-                }
-                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !flaggedBots.empty())
-                {
-                    Player* bot = flaggedBots.back();
-                    flaggedBots.pop_back();
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' from range {} will be processed for pending reset.", bot->GetName(), i + 1);
-                    }
-                    int targetRange = -1;
-                    if (bot->getClass() == CLASS_DEATH_KNIGHT)
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j] && g_HordeLevelRanges[j].upper >= 55)
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        for (int j = 0; j < g_NumRanges; ++j)
-                        {
-                            if (hordeActualCounts[j] < hordeDesiredCounts[j])
-                            {
-                                targetRange = j;
-                                break;
-                            }
-                        }
-                    }
-                    if (targetRange == -1)
-                    {
-                        if (g_BotDistFullDebugMode)
-                        {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] No valid target range found for flagged horde bot '{}' for pending reset.", bot->GetName());
-                        }
-                        break;
-                    }
+
                     bool alreadyFlagged = false;
-                    for (auto& entry : g_PendingLevelResets)
+                    ObjectGuid botGuid = bot->GetGUID();
+                    for (const auto& entry : g_PendingLevelResets)
                     {
-                        if (entry.bot == bot)
+                        if (entry.botGuid == botGuid)
                         {
                             alreadyFlagged = true;
                             break;
@@ -1401,16 +1632,60 @@ public:
                     }
                     if (!alreadyFlagged)
                     {
-                        g_PendingLevelResets.push_back({bot, targetRange, g_HordeLevelRanges.data()});
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.", 
-                                     bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
+                                bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                         }
                     }
+                    hordeActualCounts[i]--;
+                    hordeActualCounts[targetRange]++;
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
+                        targetIdx++;
+                }
+                // Efficient surplus redistribution for flaggedBots
+                targetIdx = 0;
+                while (hordeActualCounts[i] > hordeDesiredCounts[i] && !flaggedBots.empty() && targetIdx < targetRanges.size())
+                {
+                    Player* bot = flaggedBots.back();
+                    flaggedBots.pop_back();
+
+                    int targetRange = targetRanges[targetIdx];
+
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
+                    {
+                        targetIdx++;
+                        continue;
+                    }
+
+                    bool alreadyFlagged = false;
+                    ObjectGuid botGuid = bot->GetGUID();
+                    for (const auto& entry : g_PendingLevelResets)
+                    {
+                        if (entry.botGuid == botGuid)
+                        {
+                            alreadyFlagged = true;
+                            break;
+                        }
+                    }
+                    if (!alreadyFlagged)
+                    {
+                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
+                        if (g_BotDistFullDebugMode)
+                        {
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' flagged for pending level reset to range {}-{}.", 
+                                bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
+                        }
+                    }
+                    hordeActualCounts[i]--;
+                    hordeActualCounts[targetRange]++;
+                    if (hordeActualCounts[targetRange] >= hordeDesiredCounts[targetRange])
+                        targetIdx++;
                 }
             }
         }
+
 
         if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
         {
@@ -1448,7 +1723,14 @@ private:
 // -----------------------------------------------------------------------------
 // ENTRY POINT: Register the Bot Level Distribution Module
 // -----------------------------------------------------------------------------
+/**
+ * @brief Registers the world and player scripts for the Player Bot Level Brackets module.
+ *
+ * This function instantiates and adds the BotLevelBracketsWorldScript and BotLevelBracketsPlayerScript
+ * to the script system, enabling custom logic for player bot level brackets within the game world.
+ */
 void Addmod_player_bot_level_bracketsScripts()
 {
     new BotLevelBracketsWorldScript();
+    new BotLevelBracketsPlayerScript();
 }

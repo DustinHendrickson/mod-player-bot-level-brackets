@@ -32,9 +32,15 @@ BotLevelBrackets.CheckFrequency = 300
 
 #
 #    BotLevelBrackets.CheckFlaggedFrequency
-#        Description: The frequency (in seconds) at which the bot level reset is performed for flagged bots that failed safety checks initially.
-#        Default:     15
+#        Description: The frequency (in seconds) at which the bot level reset is performed for processing safe bots and checking flagged bots that failed safety checks initially.
+#        Default:    15
 BotLevelBrackets.CheckFlaggedFrequency = 15
+
+#    BotLevelBrackets.FlaggedProcessLimit
+#        Description: Maximum number of flagged bots to process per pending level change step.
+#                     0 = unlimited (process all flagged bots each step)
+#        Default:     5
+BotLevelBrackets.FlaggedProcessLimit = 5
 
 #
 #    BotLevelBrackets.GuildTrackingUpdateFrequency
@@ -53,27 +59,16 @@ BotLevelBrackets.GuildTrackingUpdateFrequency = 600
 BotLevelBrackets.IgnoreGuildBotsWithRealPlayers = 1
 
 #
-#    BotLevelBrackets.UseDynamicDistribution
-#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players 
-#                     present in each level bracket.
-#        Default:     0 (disabled)
-#                     Valid values: 0 (off) / 1 (on)
-BotLevelBrackets.UseDynamicDistribution = 0
-
-#
-#    BotLevelBrackets.RealPlayerWeight
-#        Description: A multiplier applied to each real player's contribution in their level bracket.
-#                     When combined with inverse scaling by total player count, a higher value significantly boosts the effective weight
-#                     of a real player when few are online.
-#        Default:     1.0
-BotLevelBrackets.RealPlayerWeight = 1.0
-
-#
 #    BotLevelBrackets.IgnoreFriendListed
 #         Description: Ignore bots that are on real players friend's lists from any brackets.
 #         Default:     1 (enabled)
 #                      Valid values: 0 (off) / 1 (on)
 BotLevelBrackets.IgnoreFriendListed = 1
+
+# BotLevelBrackets.ExcludeNames
+#     Description: Comma-separated list of case insensitive bot names to exclude from all bracket checks.
+#     Default:     ""
+BotLevelBrackets.ExcludeNames =
 
 #
 #    BotLevelBrackets.NumRanges
@@ -86,6 +81,44 @@ BotLevelBrackets.IgnoreFriendListed = 1
 #            lines for the additional bracket lines added below (e.g. Range10, Range11, etc.). Ensure that the
 #            sum of the Pct values for each faction remains 100.
 BotLevelBrackets.NumRanges = 9
+
+#
+#    BotLevelBrackets.Dynamic.UseDynamicDistribution
+#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players 
+#                     present in each level bracket.
+#        Default:     0 (disabled)
+#                     Valid values: 0 (off) / 1 (on)
+BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
+
+#    BotLevelBrackets.Dynamic.RealPlayerWeight
+#        Description: This setting controls how much extra weight is given to brackets (level ranges) that contain real (non-bot) players, when dynamic distribution is enabled.
+#                     The higher you set this value, the more bots will move to the same level brackets where real players are found, but the effect is *gentle*, not extreme.
+#                     A value of 0.0 means bots always distribute evenly across all brackets, regardless of where players are. The default value of 1.0 gives a mild, balanced effect.
+#                     Raising this to 3.0, 5.0, or higher will make bots concentrate more in brackets with real players.
+#                     The value is a multiplier (not a percent): 0.0 = no extra effect, 1.0 = default, 3.0 = stronger, 5.0 = strong but not extreme.
+#                     Experiment based on your total bot count and real player counts to find a good number for your server.
+#                     If you want a large congestion of bots in your level bracket for solo play I recommend 10-15 for RealPlayerWeight.
+#        What to expect:
+#          - With 1.0 (default): If 6/10 real players are in one bracket, that bracket gets about 12.77% of bots. All-empty brackets get about 10.69% each.
+#          - With 3.0: Same scenario: bracket gets about 15.73% of bots. All-empty brackets: 9.93% each.
+#          - With 5.0: Bracket with 6/10 real players gets 18.31%. All-empty brackets: 9.28% each.
+#          - If all real players are in one bracket and weight is 5.0, that bracket gets about 21.56% of bots (others: 9.80% each).
+#          - With 0.0: Every bracket always gets the same number of bots (e.g., 11.11% each for 9 brackets).
+#        Formula (per bracket):
+#          bracket_weight = 1.0 + (RealPlayerWeight × (1 / TotalRealPlayers) × log(1 + RealPlayersInBracket))
+#          All bracket weights are normalized to total 100%.
+#        Default:      1.0
+BotLevelBrackets.Dynamic.RealPlayerWeight = 1.0
+
+#
+#    BotLevelBrackets.Dynamic.SyncFactions
+#        Description: If enabled, both Alliance and Horde must have identical bracket definitions (same number, same level bounds).
+#                     All real players (regardless of faction) influence the dynamic distribution for both factions.
+#        Default:     0 (disabled)
+#   Valid values:     0 (off) / 1 (on)
+#        WARNING: Server will fail to start if brackets do not match when enabled.
+#
+BotLevelBrackets.Dynamic.SyncFactions = 0
 
 ##############################################
 # Alliance Level Brackets Configuration
