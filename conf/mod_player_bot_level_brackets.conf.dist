@@ -44,8 +44,9 @@ BotLevelBrackets.FlaggedProcessLimit = 5
 
 #
 #    BotLevelBrackets.IgnoreGuildBotsWithRealPlayers
-#        Description: When enabled, bots that are in a guild with at least one real (non-bot) player online are excluded 
+#        Description: When enabled, bots that are in a guild with at least one real (non-bot) player are excluded 
 #                     from bot bracket calculations and will not be level changed or flagged.
+#                     This now works for both online and offline real players using persistent database tracking.
 #        Default:     1 (enabled)
 #                     Valid values: 0 (disabled) / 1 (enabled)
 BotLevelBrackets.IgnoreGuildBotsWithRealPlayers = 1
