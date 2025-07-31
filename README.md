@@ -21,7 +21,7 @@ Features
 - **Death Knight Level Safeguard:**  
   Death Knight bots are enforced a minimum level of 55.
 - **Guild Bot Exclusion:**  
-  When enabled, bots that are in a guild with at least one real (non-bot) player online are excluded from bot bracket calculations and will not be adjusted.
+  When enabled, bots that are in a guild with at least one real (non-bot) player are excluded from bot bracket calculations and will not be adjusted. This feature now uses persistent database tracking to work for both online and offline real players.
 - **Friend List Exclusion:**  
   When enabled, bots that are on real players' friend lists are excluded from level bracket adjustments.
 - **Dynamic Distribution:**  
@@ -83,7 +83,8 @@ BotLevelBrackets.Dynamic.UseDynamicDistribution | Enables dynamic bot distributi
 BotLevelBrackets.Dynamic.RealPlayerWeight | Controls how much bots "follow" real player activity when dynamic distribution is enabled. 0.0 = bots always spread evenly; 1.0 = mild effect; higher values = more bots go where players are, but the effect is scaled. | 1.0 | ≥ 0.0 (float)
 BotLevelBrackets.Dynamic.SyncFactions      | Enables synchronized brackets and weighting between Alliance and Horde factions when Dynamic Distribution is also enabled.                        | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.IgnoreFriendListed           | Ignores bots that are on real players' friend lists from any bracket calculations.                                              | 1       | 0 (off) / 1 (on)
-BotLevelBrackets.IgnoreGuildBotsWithRealPlayers | Excludes bots in a guild with at least one real (non-bot) player online from adjustments.                                       | 1       | 0 (disabled) / 1 (enabled)
+BotLevelBrackets.IgnoreGuildBotsWithRealPlayers | Excludes bots in a guild with at least one real (non-bot) player from adjustments. Uses persistent database tracking for both online and offline real players. | 1       | 0 (disabled) / 1 (enabled)
+BotLevelBrackets.GuildTrackerUpdateFrequency | Frequency (in seconds) at which the persistent guild tracker database is updated to track guilds with real players.           | 600     | Positive Integer
 BotLevelBrackets.NumRanges                     | Number of level brackets used for bot distribution. Both factions must have the same number defined.                             | 9       | Positive Integer
 BotLevelBrackets.ExcludeNames                  | Comma-separated list of case insensitive bot names to exclude from all bracket checks.                                                            |         | String
 
