@@ -426,12 +426,12 @@ static void UpdatePersistentGuildTracker()
     
     uint32 addedCount = 0;
     
-    // Only add new guilds with real players - never remove existing ones
+    // Update or insert guilds with real players - ensure has_real_players is set to 1
     for (uint32 guildId : currentRealPlayerGuilds)
     {
-        // Use INSERT IGNORE to only add if not already present
+        // Use REPLACE INTO to update existing records or insert new ones
         CharacterDatabase.Execute(
-            "INSERT IGNORE INTO bot_level_brackets_guild_tracker (guild_id, has_real_players) "
+            "REPLACE INTO bot_level_brackets_guild_tracker (guild_id, has_real_players) "
             "VALUES ({}, 1)",
             guildId
         );
