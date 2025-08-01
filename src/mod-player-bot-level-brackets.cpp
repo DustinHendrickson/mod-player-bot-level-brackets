@@ -21,6 +21,7 @@
 #include "Player.h"
 
 // Forward declarations.
+class Guild;
 static bool IsAlliancePlayerBot(Player* bot);
 static bool IsHordePlayerBot(Player* bot);
 static void ClampAndBalanceBrackets();
@@ -392,21 +393,20 @@ static void LoadPersistentGuildTracker()
 /**
  * @brief Updates the persistent guild tracker database with current guild status.
  *
- * This function scans all characters in the database to determine which guilds have real players
- * (non-bot players) and updates the bot_level_brackets_guild_tracker table accordingly.
- * It runs periodically to ensure the database reflects the current state of guild memberships.
+ * This function adds guilds to the tracker when real players are found online in them.
+ * It never removes guilds from the tracker when players log off - this prevents bot level
+ * changes from occurring when real players go offline but are still members of the guild.
  */
 static void UpdatePersistentGuildTracker()
 {
     if (g_BotDistFullDebugMode)
     {
-        LOG_INFO("server.loading", "[BotLevelBrackets] Starting persistent guild tracker update...");
+        LOG_INFO("server.loading", "[BotLevelBrackets] Starting additive-only persistent guild tracker update...");
     }
     
-    // Use the same approach as LoadRealPlayerGuildIds - iterate through all players
+    // Find guilds with currently online real players
     std::unordered_set<uint32> currentRealPlayerGuilds;
     
-    // Get all players using ObjectAccessor (same as LoadRealPlayerGuildIds)
     const auto& allPlayers = ObjectAccessor::GetPlayers();
     for (const auto& itr : allPlayers)
     {
@@ -414,7 +414,6 @@ static void UpdatePersistentGuildTracker()
         if (!player || !player->IsInWorld())
             continue;
             
-        // Use the existing bot detection function
         if (!IsPlayerBot(player))
         {
             uint32 guildId = player->GetGuildId();
@@ -425,44 +424,99 @@ static void UpdatePersistentGuildTracker()
         }
     }
     
-    // Get all guild IDs to ensure we update all records
-    QueryResult guildResult = CharacterDatabase.Query("SELECT guildid FROM guild");
-    if (!guildResult)
-    {
-        if (g_BotDistFullDebugMode)
-        {
-            LOG_INFO("server.loading", "[BotLevelBrackets] No guilds found for persistent tracker update.");
-        }
-        return;
-    }
+    uint32 addedCount = 0;
     
-    uint32 updatedCount = 0;
-    
-    // Update all guild records
-    do
+    // Only add new guilds with real players - never remove existing ones
+    for (uint32 guildId : currentRealPlayerGuilds)
     {
-        uint32 guildId = guildResult->Fetch()->Get<uint32>();
-        bool hasRealPlayers = currentRealPlayerGuilds.find(guildId) != currentRealPlayerGuilds.end();
-        
-        // Update or insert the record - ONLY database call for bot_level_brackets_guild_tracker
+        // Use INSERT IGNORE to only add if not already present
         CharacterDatabase.Execute(
-            "INSERT INTO bot_level_brackets_guild_tracker (guild_id, has_real_players) "
-            "VALUES ({}, {}) "
-            "ON DUPLICATE KEY UPDATE has_real_players = VALUES(has_real_players)",
-            guildId, hasRealPlayers ? 1 : 0
+            "INSERT IGNORE INTO bot_level_brackets_guild_tracker (guild_id, has_real_players) "
+            "VALUES ({}, 1)",
+            guildId
         );
         
-        updatedCount++;
-        
-    } while (guildResult->NextRow());
-    
-    // Update our in-memory cache
-    g_PersistentRealPlayerGuildIds = currentRealPlayerGuilds;
+        // Add to our in-memory cache
+        g_PersistentRealPlayerGuildIds.insert(guildId);
+        addedCount++;
+    }
     
     if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
     {
-        LOG_INFO("server.loading", "[BotLevelBrackets] Updated {} guild records in persistent tracker. {} guilds have real players.", 
-                 updatedCount, g_PersistentRealPlayerGuildIds.size());
+        LOG_INFO("server.loading", "[BotLevelBrackets] Additive guild tracker update complete. {} guilds processed, {} total tracked guilds.", 
+                 addedCount, g_PersistentRealPlayerGuildIds.size());
+    }
+}
+
+
+/**
+ * @brief Checks and removes guilds from tracker that no longer have any real players online.
+ *
+ * This function scans all guilds currently in the tracker and removes any that don't have
+ * real players online. This is useful for cleaning up after players leave guilds.
+ * Should be called manually or as needed, not automatically on logout.
+ */
+static void CleanupGuildTracker()
+{
+    if (g_BotDistFullDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Starting guild tracker cleanup - removing guilds with no online real players...");
+    }
+    
+    // Get current guilds with online real players
+    std::unordered_set<uint32> currentRealPlayerGuilds;
+    const auto& allPlayers = ObjectAccessor::GetPlayers();
+    for (const auto& itr : allPlayers)
+    {
+        Player* player = itr.second;
+        if (!player || !player->IsInWorld())
+            continue;
+            
+        if (!IsPlayerBot(player))
+        {
+            uint32 guildId = player->GetGuildId();
+            if (guildId != 0)
+            {
+                currentRealPlayerGuilds.insert(guildId);
+            }
+        }
+    }
+    
+    // Find guilds to remove (those in tracker but not in current real player guilds)
+    std::vector<uint32> guildsToRemove;
+    for (uint32 trackedGuildId : g_PersistentRealPlayerGuildIds)
+    {
+        if (currentRealPlayerGuilds.find(trackedGuildId) == currentRealPlayerGuilds.end())
+        {
+            guildsToRemove.push_back(trackedGuildId);
+        }
+    }
+    
+    // Remove guilds that no longer have real players online
+    uint32 removedCount = 0;
+    for (uint32 guildId : guildsToRemove)
+    {
+        // Remove from database
+        CharacterDatabase.Execute(
+            "UPDATE bot_level_brackets_guild_tracker SET has_real_players = 0 WHERE guild_id = {}",
+            guildId
+        );
+        
+        // Remove from in-memory caches
+        g_PersistentRealPlayerGuildIds.erase(guildId);
+        g_RealPlayerGuildIds.erase(guildId);
+        removedCount++;
+        
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] Removed guild {} from tracker - no real players online.", guildId);
+        }
+    }
+    
+    if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] Guild tracker cleanup complete. {} guilds removed, {} guilds remain.", 
+                 removedCount, g_PersistentRealPlayerGuildIds.size());
     }
 }
 
@@ -1698,6 +1752,25 @@ public:
         }
     }
 
+    /**
+     * @brief Manually trigger guild tracker cleanup.
+     *
+     * This function can be called to remove guilds from the tracker that no longer have
+     * real players online. This is useful after players leave guilds to ensure accurate
+     * tracking and allow bot level changes in guilds that truly have no real players.
+     *
+     * Call this periodically or when you know players have left guilds to clean up the tracker.
+     */
+    void ManualGuildTrackerCleanup()
+    {
+        if (!g_BotLevelBracketsEnabled || !g_IgnoreGuildBotsWithRealPlayers)
+        {
+            return;
+        }
+        
+        CleanupGuildTracker();
+    }
+
 private:
     uint32 m_timer;         // For distribution adjustments
     uint32 m_flaggedTimer;  // For pending reset checks
@@ -1727,6 +1800,55 @@ public:
 };
 
 
+/**
+ * @class BotLevelBracketsCommandScript
+ * @brief Provides console commands for managing the bot level brackets system.
+ */
+class BotLevelBracketsCommandScript : public CommandScript
+{
+public:
+    BotLevelBracketsCommandScript() : CommandScript("BotLevelBracketsCommandScript") { }
+
+    std::vector<ChatCommand> GetCommands() override
+    {
+        static std::vector<ChatCommand> botLevelBracketsCommandTable =
+        {
+            { "cleanup-guilds", SEC_ADMINISTRATOR, false, &HandleCleanupGuildsCommand, "Clean up guild tracker - remove guilds with no online real players" },
+        };
+
+        static std::vector<ChatCommand> commandTable =
+        {
+            { "botbrackets", SEC_ADMINISTRATOR, false, nullptr, "", botLevelBracketsCommandTable },
+        };
+
+        return commandTable;
+    }
+
+    static bool HandleCleanupGuildsCommand(ChatHandler* handler, const char* /*args*/)
+    {
+        if (!g_BotLevelBracketsEnabled)
+        {
+            handler->SendSysMessage("Bot Level Brackets module is disabled.");
+            return true;
+        }
+
+        if (!g_IgnoreGuildBotsWithRealPlayers)
+        {
+            handler->SendSysMessage("Guild bot protection is disabled - cleanup not needed.");
+            return true;
+        }
+
+        uint32 beforeCount = g_PersistentRealPlayerGuildIds.size();
+        CleanupGuildTracker();
+        uint32 afterCount = g_PersistentRealPlayerGuildIds.size();
+        uint32 removedCount = beforeCount - afterCount;
+
+        handler->PSendSysMessage("Guild tracker cleanup complete. %u guilds removed, %u guilds remain.", removedCount, afterCount);
+        return true;
+    }
+};
+
+
 // -----------------------------------------------------------------------------
 // ENTRY POINT: Register the Bot Level Distribution Module
 // -----------------------------------------------------------------------------
@@ -1740,4 +1862,5 @@ void Addmod_player_bot_level_bracketsScripts()
 {
     new BotLevelBracketsWorldScript();
     new BotLevelBracketsPlayerScript();
+    new BotLevelBracketsCommandScript();
 }
