@@ -403,43 +403,52 @@ static void UpdatePersistentGuildTracker()
         LOG_INFO("server.loading", "[BotLevelBrackets] Starting persistent guild tracker update...");
     }
     
-    // Query to get all guilds and check if they have real players
-    QueryResult result = CharacterDatabase.Query(
-        "SELECT DISTINCT g.guildid, "
-        "CASE WHEN EXISTS("
-        "    SELECT 1 FROM characters c "
-        "    WHERE c.guid = gm.guid "
-        "    AND c.guid NOT IN ("
-        "        SELECT owner FROM ai_playerbot_random_bots"
-        "    )"
-        ") THEN 1 ELSE 0 END as has_real_players "
-        "FROM guild g "
-        "LEFT JOIN guild_member gm ON g.guildid = gm.guildid"
-    );
+    // Use the same approach as LoadRealPlayerGuildIds - iterate through all players
+    std::unordered_set<uint32> currentRealPlayerGuilds;
     
-    if (!result)
+    // Get all players using standard AzerothCore method
+    SessionMap const& sessions = sWorld->GetAllSessions();
+    for (SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+    {
+        WorldSession* session = itr->second;
+        if (!session)
+            continue;
+            
+        Player* player = session->GetPlayer();
+        if (!player || !player->IsInWorld())
+            continue;
+            
+        // Use the existing bot detection function
+        if (!IsPlayerBot(player))
+        {
+            uint32 guildId = player->GetGuildId();
+            if (guildId != 0)
+            {
+                currentRealPlayerGuilds.insert(guildId);
+            }
+        }
+    }
+    
+    // Get all guild IDs to ensure we update all records
+    QueryResult guildResult = CharacterDatabase.Query("SELECT guildid FROM guild");
+    if (!guildResult)
     {
         if (g_BotDistFullDebugMode)
         {
-            LOG_INFO("server.loading", "[BotLevelBrackets] No guild data found for persistent tracker update.");
+            LOG_INFO("server.loading", "[BotLevelBrackets] No guilds found for persistent tracker update.");
         }
         return;
     }
     
-    std::unordered_set<uint32> currentRealPlayerGuilds;
     uint32 updatedCount = 0;
     
+    // Update all guild records
     do
     {
-        uint32 guildId = result->Fetch()->Get<uint32>();
-        bool hasRealPlayers = result->Fetch()->Get<bool>();
+        uint32 guildId = guildResult->Fetch()->Get<uint32>();
+        bool hasRealPlayers = currentRealPlayerGuilds.find(guildId) != currentRealPlayerGuilds.end();
         
-        if (hasRealPlayers)
-        {
-            currentRealPlayerGuilds.insert(guildId);
-        }
-        
-        // Update or insert the record
+        // Update or insert the record - ONLY database call for bot_level_brackets_guild_tracker
         CharacterDatabase.Execute(
             "INSERT INTO bot_level_brackets_guild_tracker (guild_id, has_real_players) "
             "VALUES ({}, {}) "
@@ -449,7 +458,7 @@ static void UpdatePersistentGuildTracker()
         
         updatedCount++;
         
-    } while (result->NextRow());
+    } while (guildResult->NextRow());
     
     // Update our in-memory cache
     g_PersistentRealPlayerGuildIds = currentRealPlayerGuilds;
