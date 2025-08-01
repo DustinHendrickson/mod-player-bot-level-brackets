@@ -406,15 +406,11 @@ static void UpdatePersistentGuildTracker()
     // Use the same approach as LoadRealPlayerGuildIds - iterate through all players
     std::unordered_set<uint32> currentRealPlayerGuilds;
     
-    // Get all players using standard AzerothCore method
-    SessionMap const& sessions = sWorld->GetAllSessions();
-    for (SessionMap::const_iterator itr = sessions.begin(); itr != sessions.end(); ++itr)
+    // Get all players using ObjectAccessor (same as LoadRealPlayerGuildIds)
+    const auto& allPlayers = ObjectAccessor::GetPlayers();
+    for (const auto& itr : allPlayers)
     {
-        WorldSession* session = itr->second;
-        if (!session)
-            continue;
-            
-        Player* player = session->GetPlayer();
+        Player* player = itr.second;
         if (!player || !player->IsInWorld())
             continue;
             
