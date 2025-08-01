@@ -1800,55 +1800,6 @@ public:
 };
 
 
-/**
- * @class BotLevelBracketsCommandScript
- * @brief Provides console commands for managing the bot level brackets system.
- */
-class BotLevelBracketsCommandScript : public CommandScript
-{
-public:
-    BotLevelBracketsCommandScript() : CommandScript("BotLevelBracketsCommandScript") { }
-
-    std::vector<ChatCommand> GetCommands() override
-    {
-        static std::vector<ChatCommand> botLevelBracketsCommandTable =
-        {
-            { "cleanup-guilds", SEC_ADMINISTRATOR, false, &HandleCleanupGuildsCommand, "Clean up guild tracker - remove guilds with no online real players" },
-        };
-
-        static std::vector<ChatCommand> commandTable =
-        {
-            { "botbrackets", SEC_ADMINISTRATOR, false, nullptr, "", botLevelBracketsCommandTable },
-        };
-
-        return commandTable;
-    }
-
-    static bool HandleCleanupGuildsCommand(ChatHandler* handler, const char* /*args*/)
-    {
-        if (!g_BotLevelBracketsEnabled)
-        {
-            handler->SendSysMessage("Bot Level Brackets module is disabled.");
-            return true;
-        }
-
-        if (!g_IgnoreGuildBotsWithRealPlayers)
-        {
-            handler->SendSysMessage("Guild bot protection is disabled - cleanup not needed.");
-            return true;
-        }
-
-        uint32 beforeCount = g_PersistentRealPlayerGuildIds.size();
-        CleanupGuildTracker();
-        uint32 afterCount = g_PersistentRealPlayerGuildIds.size();
-        uint32 removedCount = beforeCount - afterCount;
-
-        handler->PSendSysMessage("Guild tracker cleanup complete. %u guilds removed, %u guilds remain.", removedCount, afterCount);
-        return true;
-    }
-};
-
-
 // -----------------------------------------------------------------------------
 // ENTRY POINT: Register the Bot Level Distribution Module
 // -----------------------------------------------------------------------------
@@ -1862,5 +1813,4 @@ void Addmod_player_bot_level_bracketsScripts()
 {
     new BotLevelBracketsWorldScript();
     new BotLevelBracketsPlayerScript();
-    new BotLevelBracketsCommandScript();
 }
