@@ -44,7 +44,7 @@ BotLevelBrackets.FlaggedProcessLimit = 5
 
 #
 #    BotLevelBrackets.IgnoreGuildBotsWithRealPlayers
-#        Description: When enabled, bots that are in a guild with at least one real (non-bot) player are excluded 
+#        Description: When enabled, bots that are in a guild with at least one real (non-bot) player are excluded
 #                     from bot bracket calculations and will not be level changed or flagged.
 #                     This now works for both online and offline real players using persistent database tracking.
 #        Default:     1 (enabled)
@@ -84,7 +84,7 @@ BotLevelBrackets.NumRanges = 9
 
 #
 #    BotLevelBrackets.Dynamic.UseDynamicDistribution
-#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players 
+#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players
 #                     present in each level bracket.
 #        Default:     0 (disabled)
 #                     Valid values: 0 (off) / 1 (on)
@@ -119,6 +119,14 @@ BotLevelBrackets.Dynamic.RealPlayerWeight = 1.0
 #        WARNING: Server will fail to start if brackets do not match when enabled.
 #
 BotLevelBrackets.Dynamic.SyncFactions = 0
+
+#
+#    BotLevelBrackets.IgnoreArenaTeamBots
+#        Description: Ignore bots that are members of any arena team (prevents downgrades)
+#        Default:     1 (enabled)
+#   Valid values:     0 (off) / 1 (on)
+#
+BotLevelBrackets.IgnoreArenaTeamBots = 1
 
 ##############################################
 # Alliance Level Brackets Configuration
