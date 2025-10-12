@@ -61,7 +61,6 @@ static bool   g_BotDistLiteDebugMode      = false;
 static bool   g_UseDynamicDistribution  = false;
 static bool   g_IgnoreFriendListed = true;
 static uint32 g_FlaggedProcessLimit = 5; // 0 = unlimited
-static bool g_IgnoreArenaTeamBots = true;
 
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
@@ -109,7 +108,7 @@ static void LoadBotLevelBracketsConfig()
 {
     g_BotLevelBracketsEnabled = sConfigMgr->GetOption<bool>("BotLevelBrackets.Enabled", true);
     g_IgnoreGuildBotsWithRealPlayers = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreGuildBotsWithRealPlayers", true);
-    g_IgnoreArenaTeamBots = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreArenaTeamBots", true);
+    
     g_BotDistFullDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.FullDebugMode", false);
     g_BotDistLiteDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.LiteDebugMode", false);
     g_BotDistCheckFrequency = sConfigMgr->GetOption<uint32>("BotLevelBrackets.CheckFrequency", 300);
@@ -168,8 +167,8 @@ static void LoadBotLevelBracketsConfig()
                 LOG_ERROR("server.loading", "[BotLevelBrackets] FATAL: Bracket mismatch detected between factions at index {}. "
                     "Alliance: {}-{}, Horde: {}-{}. "
                     "When SyncFactions is enabled, both bracket number and min/max levels must match exactly. "
-                    "Check your configuration.",
-                    i, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper,
+                    "Check your configuration.", 
+                    i, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper, 
                     g_HordeLevelRanges[i].lower, g_HordeLevelRanges[i].upper);
                 std::terminate();
             }
@@ -200,29 +199,6 @@ static bool IsPlayerBot(Player* player)
     }
     PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(player);
     return botAI && botAI->IsBotAI();
-}
-
-/**
- * @brief Checks if player is in arena team.
- *
- * Checks if player is in arena team
- *
- * @param p Pointer to the Player object to check.
- * @return true if the player is in a team.
- */
-static bool BotInArenaTeam(Player* p)
-{
-    if (!p || !p->IsInWorld() || !p->GetSession() || p->GetSession()->isLogingOut() || p->IsDuringRemoveFromWorld())
-        return false;
-
-    // Check if player is in an arena team
-    for (uint32 arena_slot = 0; arena_slot < MAX_ARENA_SLOT; ++arena_slot)
-    {
-        uint32 arenaTeamId = p->GetArenaTeamId(arena_slot);
-        if (arenaTeamId)
-            return true;
-    }
-    return false;
 }
 
 
@@ -382,7 +358,7 @@ static void LoadPersistentGuildTracker()
 {
     g_PersistentRealPlayerGuildIds.clear();
     QueryResult result = CharacterDatabase.Query("SELECT guild_id FROM bot_level_brackets_guild_tracker WHERE has_real_players = 1");
-
+    
     if (!result)
     {
         if (g_BotDistFullDebugMode)
@@ -391,12 +367,12 @@ static void LoadPersistentGuildTracker()
         }
         return;
     }
-
+    
     if (g_BotDistFullDebugMode)
     {
         LOG_INFO("server.loading", "[BotLevelBrackets] Loading persistent guild tracker data from database...");
     }
-
+    
     do
     {
         uint32 guildId = result->Fetch()->Get<uint32>();
@@ -406,7 +382,7 @@ static void LoadPersistentGuildTracker()
             LOG_INFO("server.loading", "[BotLevelBrackets] Loaded guild {} as having real players.", guildId);
         }
     } while (result->NextRow());
-
+    
     if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
     {
         LOG_INFO("server.loading", "[BotLevelBrackets] Loaded {} guilds with real players from persistent storage.", g_PersistentRealPlayerGuildIds.size());
@@ -427,17 +403,17 @@ static void UpdatePersistentGuildTracker()
     {
         LOG_INFO("server.loading", "[BotLevelBrackets] Starting additive-only persistent guild tracker update...");
     }
-
+    
     // Find guilds with currently online real players
     std::unordered_set<uint32> currentRealPlayerGuilds;
-
+    
     const auto& allPlayers = ObjectAccessor::GetPlayers();
     for (const auto& itr : allPlayers)
     {
         Player* player = itr.second;
         if (!player || !player->IsInWorld())
             continue;
-
+            
         if (!IsPlayerBot(player))
         {
             uint32 guildId = player->GetGuildId();
@@ -447,9 +423,9 @@ static void UpdatePersistentGuildTracker()
             }
         }
     }
-
+    
     uint32 addedCount = 0;
-
+    
     // Update or insert guilds with real players - ensure has_real_players is set to 1
     for (uint32 guildId : currentRealPlayerGuilds)
     {
@@ -459,15 +435,15 @@ static void UpdatePersistentGuildTracker()
             "VALUES ({}, 1)",
             guildId
         );
-
+        
         // Add to our in-memory cache
         g_PersistentRealPlayerGuildIds.insert(guildId);
         addedCount++;
     }
-
+    
     if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
     {
-        LOG_INFO("server.loading", "[BotLevelBrackets] Additive guild tracker update complete. {} guilds processed, {} total tracked guilds.",
+        LOG_INFO("server.loading", "[BotLevelBrackets] Additive guild tracker update complete. {} guilds processed, {} total tracked guilds.", 
                  addedCount, g_PersistentRealPlayerGuildIds.size());
     }
 }
@@ -486,7 +462,7 @@ static void CleanupGuildTracker()
     {
         LOG_INFO("server.loading", "[BotLevelBrackets] Starting guild tracker cleanup - removing guilds with no online real players...");
     }
-
+    
     // Get current guilds with online real players
     std::unordered_set<uint32> currentRealPlayerGuilds;
     const auto& allPlayers = ObjectAccessor::GetPlayers();
@@ -495,7 +471,7 @@ static void CleanupGuildTracker()
         Player* player = itr.second;
         if (!player || !player->IsInWorld())
             continue;
-
+            
         if (!IsPlayerBot(player))
         {
             uint32 guildId = player->GetGuildId();
@@ -505,7 +481,7 @@ static void CleanupGuildTracker()
             }
         }
     }
-
+    
     // Find guilds to remove (those in tracker but not in current real player guilds)
     std::vector<uint32> guildsToRemove;
     for (uint32 trackedGuildId : g_PersistentRealPlayerGuildIds)
@@ -515,7 +491,7 @@ static void CleanupGuildTracker()
             guildsToRemove.push_back(trackedGuildId);
         }
     }
-
+    
     // Remove guilds that no longer have real players online
     uint32 removedCount = 0;
     for (uint32 guildId : guildsToRemove)
@@ -525,21 +501,21 @@ static void CleanupGuildTracker()
             "UPDATE bot_level_brackets_guild_tracker SET has_real_players = 0 WHERE guild_id = {}",
             guildId
         );
-
+        
         // Remove from in-memory caches
         g_PersistentRealPlayerGuildIds.erase(guildId);
         g_RealPlayerGuildIds.erase(guildId);
         removedCount++;
-
+        
         if (g_BotDistFullDebugMode)
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Removed guild {} from tracker - no real players online.", guildId);
         }
     }
-
+    
     if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
     {
-        LOG_INFO("server.loading", "[BotLevelBrackets] Guild tracker cleanup complete. {} guilds removed, {} guilds remain.",
+        LOG_INFO("server.loading", "[BotLevelBrackets] Guild tracker cleanup complete. {} guilds removed, {} guilds remain.", 
                  removedCount, g_PersistentRealPlayerGuildIds.size());
     }
 }
@@ -654,7 +630,7 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
     {
         return;
     }
-
+    
     if (targetRangeIndex < 0 || targetRangeIndex >= g_NumRanges)
     {
         return;
@@ -1020,7 +996,7 @@ static void ProcessPendingLevelResets()
                 break;
 
             Player* bot = ObjectAccessor::FindPlayer(it->botGuid);
-
+            
             if (!bot)
             {
                 it = g_PendingLevelResets.erase(it);
@@ -1051,8 +1027,6 @@ static void ProcessPendingLevelResets()
                 it = g_PendingLevelResets.erase(it);
                 continue;
             }
-
-            if (g_IgnoreArenaTeamBots && BotInArenaTeam(bot)) { it = g_PendingLevelResets.erase(it); continue; }
 
             if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
             {
@@ -1253,7 +1227,7 @@ public:
         {
             return;
         }
-
+        
         m_timer += diff;
         m_flaggedTimer += diff;
         m_guildTrackerTimer += diff;
@@ -1305,7 +1279,6 @@ public:
                     continue;
                 if (IsPlayerBot(player))
                     continue; // Only count real players.
-                if (g_IgnoreArenaTeamBots && BotInArenaTeam(player)) continue;
                 int rangeIndex = GetOrFlagPlayerBracket(player);
                 if (rangeIndex < 0)
                     continue;
@@ -1402,7 +1375,7 @@ public:
                 }
             }
         }
-
+        
         uint32 totalAllianceBots = 0;
         std::vector<int> allianceActualCounts(g_NumRanges, 0);
         std::vector< std::vector<Player*> > allianceBotsByRange(g_NumRanges);
@@ -1469,7 +1442,7 @@ public:
                     allianceBotsByRange[rangeIndex].push_back(player);
                     if (g_BotDistFullDebugMode)
                     {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' with level {} added to range {}.",
+                        LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' with level {} added to range {}.", 
                                  player->GetName(), player->GetLevel(), rangeIndex + 1);
                     }
                 }
@@ -1488,7 +1461,7 @@ public:
                     hordeBotsByRange[rangeIndex].push_back(player);
                     if (g_BotDistFullDebugMode)
                     {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' with level {} added to range {}.",
+                        LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' with level {} added to range {}.", 
                                  player->GetName(), player->GetLevel(), rangeIndex + 1);
                     }
                 }
@@ -1520,7 +1493,7 @@ public:
                 allianceDesiredCounts[i] = static_cast<int>(round((g_AllianceLevelRanges[i].desiredPercent / 100.0) * totalAllianceBots));
                 if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {} ({}-{}): Desired = {}, Actual = {}.",
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {} ({}-{}): Desired = {}, Actual = {}.", 
                             i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper,
                             allianceDesiredCounts[i], allianceActualCounts[i]);
                 }
@@ -1579,7 +1552,7 @@ public:
                         g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.",
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.", 
                                 bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                         }
                     }
@@ -1619,7 +1592,7 @@ public:
                         g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' flagged for pending level reset to range {}-{}.",
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' flagged for pending level reset to range {}-{}.", 
                                 bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                         }
                     }
@@ -1700,7 +1673,7 @@ public:
                         g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.",
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.", 
                                 bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                         }
                     }
@@ -1739,7 +1712,7 @@ public:
                         g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' flagged for pending level reset to range {}-{}.",
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' flagged for pending level reset to range {}-{}.", 
                                 bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                         }
                     }
@@ -1762,7 +1735,7 @@ public:
             for (int i = 0; i < g_NumRanges; ++i)
             {
                 allianceDesiredCounts[i] = static_cast<int>(round((g_AllianceLevelRanges[i].desiredPercent / 100.0) * totalAllianceBots));
-                LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {} ({}-{}): Desired = {}, Actual = {}.",
+                LOG_INFO("server.loading", "[BotLevelBrackets] Alliance Range {} ({}-{}): Desired = {}, Actual = {}.", 
                          i + 1, g_AllianceLevelRanges[i].lower, g_AllianceLevelRanges[i].upper,
                          allianceDesiredCounts[i], allianceActualCounts[i]);
             }
@@ -1794,7 +1767,7 @@ public:
         {
             return;
         }
-
+        
         CleanupGuildTracker();
     }
 
