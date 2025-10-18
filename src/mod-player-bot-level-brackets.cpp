@@ -255,39 +255,6 @@ static bool IsHordePlayerBot(Player* bot)
 
 
 /**
- * @brief Logs the number of player bots at each level if full debug mode is enabled.
- *
- * This function iterates through all players in the world, counts the number of bots at each level,
- * and logs the results. Only bots that are currently in the world are considered. The logging occurs
- * only if the global debug mode flag `g_BotDistFullDebugMode` is set to true.
- */
-static void LogAllBotLevels()
-{
-    if (g_BotDistFullDebugMode)
-    {
-        std::map<uint8, uint32> botLevelCount;
-        for (auto const& itr : ObjectAccessor::GetPlayers())
-        {
-            Player* player = itr.second;
-            if (!player || !player->IsInWorld())
-            {
-                continue;
-            }
-            if (!IsPlayerBot(player))
-            {
-                continue;
-            }
-            botLevelCount[player->GetLevel()]++;
-        }
-        for (const auto& entry : botLevelCount)
-        {
-            LOG_INFO("server.loading", "[BotLevelBrackets] Level {}: {} bots", entry.first, entry.second);
-        }
-    }
-}
-
-
-/**
  * @brief Removes a bot from the list of pending level resets.
  *
  * This function searches the global g_PendingLevelResets container for any entries
