@@ -107,8 +107,8 @@ BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
 #        Formula (per bracket):
 #          bracket_weight = 1.0 + (RealPlayerWeight × (1 / TotalRealPlayers) × log(1 + RealPlayersInBracket))
 #          All bracket weights are normalized to total 100%.
-#        Default:      10.0
-BotLevelBrackets.Dynamic.RealPlayerWeight = 10.0
+#        Default:      1.0
+BotLevelBrackets.Dynamic.RealPlayerWeight = 1.0
 
 #
 #    BotLevelBrackets.Dynamic.SyncFactions

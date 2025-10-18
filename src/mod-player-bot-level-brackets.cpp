@@ -1806,18 +1806,51 @@ public:
     }
 };
 
+/**
+ * @class BotLevelBracketsCommandScript
+ * @brief Handles chat commands for the Player Bot Level Brackets module.
+ *
+ * This script provides administrative commands to manage the bot level brackets configuration.
+ */
+class BotLevelBracketsCommandScript : public CommandScript
+{
+public:
+    BotLevelBracketsCommandScript() : CommandScript("BotLevelBracketsCommandScript") {}
+
+    std::vector<ChatCommand> GetCommands() const override
+    {
+        static std::vector<ChatCommand> commandTable =
+        {
+            { "reload", SEC_ADMINISTRATOR, false, &HandleReloadConfig, "" }
+        };
+        static std::vector<ChatCommand> commandTableMain =
+        {
+            { "botlevelbrackets", SEC_ADMINISTRATOR, true, nullptr, "", commandTable }
+        };
+        return commandTableMain;
+    }
+
+    static bool HandleReloadConfig(ChatHandler* handler, const char* args)
+    {
+        LoadBotLevelBracketsConfig();
+        handler->SendSysMessage("Bot level brackets config reloaded.");
+        return true;
+    }
+};
 
 // -----------------------------------------------------------------------------
 // ENTRY POINT: Register the Bot Level Distribution Module
 // -----------------------------------------------------------------------------
 /**
- * @brief Registers the world and player scripts for the Player Bot Level Brackets module.
+ * @brief Registers the world, player, and command scripts for the Player Bot Level Brackets module.
  *
- * This function instantiates and adds the BotLevelBracketsWorldScript and BotLevelBracketsPlayerScript
- * to the script system, enabling custom logic for player bot level brackets within the game world.
+ * This function instantiates and adds the BotLevelBracketsWorldScript, BotLevelBracketsPlayerScript,
+ * and BotLevelBracketsCommandScript to the script system, enabling custom logic and commands
+ * for player bot level brackets within the game world.
  */
 void Addmod_player_bot_level_bracketsScripts()
 {
     new BotLevelBracketsWorldScript();
     new BotLevelBracketsPlayerScript();
+    new BotLevelBracketsCommandScript();
 }
