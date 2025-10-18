@@ -23,8 +23,6 @@
 
 using namespace Acore::ChatCommands;
 
-using ChatCommandTable = std::vector<Acore::ChatCommands::ChatCommandBuilder>;
-
 // Forward declarations.
 class Guild;
 static bool IsAlliancePlayerBot(Player* bot);
@@ -1838,16 +1836,12 @@ public:
     {
         static ChatCommandTable commandTable =
         {
-            { "reload", SEC_ADMINISTRATOR, false, &HandleReloadConfig, "" }
+            { "reload", HandleReloadConfig, SEC_ADMINISTRATOR, Console::No }
         };
-        static ChatCommandTable commandTableMain =
-        {
-            { "botlevelbrackets", SEC_ADMINISTRATOR, true, nullptr, "", commandTable }
-        };
-        return commandTableMain;
+        return commandTable;
     }
 
-    static bool HandleReloadConfig(ChatHandler* handler, const char* args)
+    static bool HandleReloadConfig(ChatHandler* handler)
     {
         LoadBotLevelBracketsConfig();
         handler->SendSysMessage("Bot level brackets config reloaded.");
