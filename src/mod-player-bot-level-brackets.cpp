@@ -2,6 +2,7 @@
 #include "Player.h"
 #include "ObjectMgr.h"
 #include "Chat.h"
+#include "CommandScript.h"
 #include "Log.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotMgr.h"
@@ -1829,13 +1830,13 @@ class BotLevelBracketsCommandScript : public CommandScript
 public:
     BotLevelBracketsCommandScript() : CommandScript("BotLevelBracketsCommandScript") {}
 
-    Acore::ChatCommands::ChatCommandTable GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static Acore::ChatCommands::ChatCommandTable commandTable =
+        static ChatCommandTable commandTable =
         {
             { "reload", SEC_ADMINISTRATOR, false, &HandleReloadConfig, "" }
         };
-        static Acore::ChatCommands::ChatCommandTable commandTableMain =
+        static ChatCommandTable commandTableMain =
         {
             { "botlevelbrackets", SEC_ADMINISTRATOR, true, nullptr, "", commandTable }
         };
