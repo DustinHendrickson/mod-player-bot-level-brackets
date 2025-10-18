@@ -2,6 +2,7 @@
 #include "Player.h"
 #include "ObjectMgr.h"
 #include "Chat.h"
+#include "CommandScript.h"
 #include "Log.h"
 #include "PlayerbotAI.h"
 #include "PlayerbotMgr.h"
@@ -19,6 +20,8 @@
 #include "QueryResult.h"
 #include <string>
 #include "Player.h"
+
+using namespace Acore::ChatCommands;
 
 // Forward declarations.
 class Guild;
@@ -71,7 +74,7 @@ static float g_RealPlayerWeight = 1.0f;
 static bool g_SyncFactions = false;
 
 // Array for character social list friends
-std::vector<int> g_SocialFriendsList;
+std::vector<uint64> g_SocialFriendsList;
 
 // Array for excluded bot names.
 static std::vector<std::string> g_ExcludeBotNames;
@@ -252,39 +255,6 @@ static bool IsHordePlayerBot(Player* bot)
 
 
 /**
- * @brief Logs the number of player bots at each level if full debug mode is enabled.
- *
- * This function iterates through all players in the world, counts the number of bots at each level,
- * and logs the results. Only bots that are currently in the world are considered. The logging occurs
- * only if the global debug mode flag `g_BotDistFullDebugMode` is set to true.
- */
-static void LogAllBotLevels()
-{
-    if (g_BotDistFullDebugMode)
-    {
-        std::map<uint8, uint32> botLevelCount;
-        for (auto const& itr : ObjectAccessor::GetPlayers())
-        {
-            Player* player = itr.second;
-            if (!player || !player->IsInWorld())
-            {
-                continue;
-            }
-            if (!IsPlayerBot(player))
-            {
-                continue;
-            }
-            botLevelCount[player->GetLevel()]++;
-        }
-        for (const auto& entry : botLevelCount)
-        {
-            LOG_INFO("server.loading", "[BotLevelBrackets] Level {}: {} bots", entry.first, entry.second);
-        }
-    }
-}
-
-
-/**
  * @brief Removes a bot from the list of pending level resets.
  *
  * This function searches the global g_PendingLevelResets container for any entries
@@ -338,7 +308,7 @@ static void LoadSocialFriendList()
     do
     {
         uint32 socialFriendGUID = result->Fetch()->Get<uint32>();
-        g_SocialFriendsList.push_back(socialFriendGUID);
+        g_SocialFriendsList.push_back(static_cast<uint64>(socialFriendGUID));
         if (g_BotDistFullDebugMode)
         {
             LOG_INFO("server.load", "[BotLevelBrackets] Adding GUID {} to Social Friend List", socialFriendGUID);
@@ -664,11 +634,27 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
         {
             lowerBound = 55;
         }
+        if (lowerBound > upperBound)
+        {
+            return;
+        }
         newLevel = urand(lowerBound, upperBound);
     }
     else
     {
-        newLevel = GetRandomLevelInRange(factionRanges[targetRangeIndex]);
+        const LevelRangeConfig& range = factionRanges[targetRangeIndex];
+        if (range.lower > range.upper)
+        {
+            if (g_BotDistFullDebugMode)
+            {
+                std::string playerFaction = IsAlliancePlayerBot(bot) ? "Alliance" : "Horde";
+                LOG_INFO("server.loading",
+                         "[BotLevelBrackets] AdjustBotToRange: Invalid range {}-{} for {} bot '{}'.",
+                         range.lower, range.upper, playerFaction, bot->GetName());
+            }
+            return;
+        }
+        newLevel = GetRandomLevelInRange(range);
     }
 
     PlayerbotFactory newFactory(bot, newLevel);
@@ -1361,6 +1347,9 @@ public:
             applyWeights(g_AllianceLevelRanges, allianceWeights);
             applyWeights(g_HordeLevelRanges, hordeWeights);
 
+            // Ensure brackets respect global min/max levels and percentages sum to 100
+            ClampAndBalanceBrackets();
+
             // Debug output for new bracket percentages after normalization
             if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
             {
@@ -1799,18 +1788,47 @@ public:
     }
 };
 
+/**
+ * @class BotLevelBracketsCommandScript
+ * @brief Handles chat commands for the Player Bot Level Brackets module.
+ *
+ * This script provides administrative commands to manage the bot level brackets configuration.
+ */
+class BotLevelBracketsCommandScript : public CommandScript
+{
+public:
+    BotLevelBracketsCommandScript() : CommandScript("BotLevelBracketsCommandScript") {}
+
+    ChatCommandTable GetCommands() const override
+    {
+        static ChatCommandTable commandTable =
+        {
+            { "reload", HandleReloadConfig, SEC_ADMINISTRATOR, Console::No }
+        };
+        return commandTable;
+    }
+
+    static bool HandleReloadConfig(ChatHandler* handler)
+    {
+        LoadBotLevelBracketsConfig();
+        handler->SendSysMessage("Bot level brackets config reloaded.");
+        return true;
+    }
+};
 
 // -----------------------------------------------------------------------------
 // ENTRY POINT: Register the Bot Level Distribution Module
 // -----------------------------------------------------------------------------
 /**
- * @brief Registers the world and player scripts for the Player Bot Level Brackets module.
+ * @brief Registers the world, player, and command scripts for the Player Bot Level Brackets module.
  *
- * This function instantiates and adds the BotLevelBracketsWorldScript and BotLevelBracketsPlayerScript
- * to the script system, enabling custom logic for player bot level brackets within the game world.
+ * This function instantiates and adds the BotLevelBracketsWorldScript, BotLevelBracketsPlayerScript,
+ * and BotLevelBracketsCommandScript to the script system, enabling custom logic and commands
+ * for player bot level brackets within the game world.
  */
 void Addmod_player_bot_level_bracketsScripts()
 {
     new BotLevelBracketsWorldScript();
     new BotLevelBracketsPlayerScript();
+    new BotLevelBracketsCommandScript();
 }
