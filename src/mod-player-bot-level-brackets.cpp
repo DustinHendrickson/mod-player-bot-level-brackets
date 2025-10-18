@@ -1829,13 +1829,13 @@ class BotLevelBracketsCommandScript : public CommandScript
 public:
     BotLevelBracketsCommandScript() : CommandScript("BotLevelBracketsCommandScript") {}
 
-    std::vector<ChatCommand> GetCommands() const override
+    ChatCommandTable GetCommands() const override
     {
-        static std::vector<ChatCommand> commandTable =
+        static ChatCommandTable commandTable =
         {
             { "reload", SEC_ADMINISTRATOR, false, &HandleReloadConfig, "" }
         };
-        static std::vector<ChatCommand> commandTableMain =
+        static ChatCommandTable commandTableMain =
         {
             { "botlevelbrackets", SEC_ADMINISTRATOR, true, nullptr, "", commandTable }
         };
