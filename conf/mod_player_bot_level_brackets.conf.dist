@@ -85,7 +85,7 @@ BotLevelBrackets.NumRanges = 9
 #
 #    BotLevelBrackets.Dynamic.UseDynamicDistribution
 #        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players 
-#                     present in each level bracket.
+#                     present in each level bracket. This overrides any custom brackets in the conf.
 #        Default:     0 (disabled)
 #                     Valid values: 0 (off) / 1 (on)
 BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
@@ -95,7 +95,7 @@ BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
 #                     The higher you set this value, the more bots will move to the same level brackets where real players are found, but the effect is *gentle*, not extreme.
 #                     A value of 0.0 means bots always distribute evenly across all brackets, regardless of where players are. The default value of 1.0 gives a mild, balanced effect.
 #                     Raising this to 3.0, 5.0, or higher will make bots concentrate more in brackets with real players.
-#                     The value is a multiplier (not a percent): 0.0 = no extra effect, 1.0 = default, 3.0 = stronger, 5.0 = strong but not extreme.
+#                     The value is a multiplier (not a percent): 0.0 = no extra effect, 1.0 = minimal, 3.0 = stronger, 5.0 = strong but not extreme.
 #                     Experiment based on your total bot count and real player counts to find a good number for your server.
 #                     If you want a large congestion of bots in your level bracket for solo play I recommend 10-15 for RealPlayerWeight.
 #        What to expect:
@@ -107,8 +107,8 @@ BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
 #        Formula (per bracket):
 #          bracket_weight = 1.0 + (RealPlayerWeight × (1 / TotalRealPlayers) × log(1 + RealPlayersInBracket))
 #          All bracket weights are normalized to total 100%.
-#        Default:      1.0
-BotLevelBrackets.Dynamic.RealPlayerWeight = 1.0
+#        Default:      10.0
+BotLevelBrackets.Dynamic.RealPlayerWeight = 10.0
 
 #
 #    BotLevelBrackets.Dynamic.SyncFactions

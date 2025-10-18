@@ -664,6 +664,10 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
         {
             lowerBound = 55;
         }
+        if (lowerBound > upperBound)
+        {
+            return;
+        }
         newLevel = urand(lowerBound, upperBound);
     }
     else
@@ -1360,6 +1364,9 @@ public:
 
             applyWeights(g_AllianceLevelRanges, allianceWeights);
             applyWeights(g_HordeLevelRanges, hordeWeights);
+
+            // Ensure brackets respect global min/max levels and percentages sum to 100
+            ClampAndBalanceBrackets();
 
             // Debug output for new bracket percentages after normalization
             if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
