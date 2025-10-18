@@ -71,7 +71,7 @@ static float g_RealPlayerWeight = 1.0f;
 static bool g_SyncFactions = false;
 
 // Array for character social list friends
-std::vector<int> g_SocialFriendsList;
+std::vector<uint64> g_SocialFriendsList;
 
 // Array for excluded bot names.
 static std::vector<std::string> g_ExcludeBotNames;
@@ -338,7 +338,7 @@ static void LoadSocialFriendList()
     do
     {
         uint32 socialFriendGUID = result->Fetch()->Get<uint32>();
-        g_SocialFriendsList.push_back(socialFriendGUID);
+        g_SocialFriendsList.push_back(static_cast<uint64>(socialFriendGUID));
         if (g_BotDistFullDebugMode)
         {
             LOG_INFO("server.load", "[BotLevelBrackets] Adding GUID {} to Social Friend List", socialFriendGUID);
@@ -1829,13 +1829,13 @@ class BotLevelBracketsCommandScript : public CommandScript
 public:
     BotLevelBracketsCommandScript() : CommandScript("BotLevelBracketsCommandScript") {}
 
-    ChatCommandTable GetCommands() const override
+    Acore::ChatCommands::ChatCommandTable GetCommands() const override
     {
-        static ChatCommandTable commandTable =
+        static Acore::ChatCommands::ChatCommandTable commandTable =
         {
             { "reload", SEC_ADMINISTRATOR, false, &HandleReloadConfig, "" }
         };
-        static ChatCommandTable commandTableMain =
+        static Acore::ChatCommands::ChatCommandTable commandTableMain =
         {
             { "botlevelbrackets", SEC_ADMINISTRATOR, true, nullptr, "", commandTable }
         };
