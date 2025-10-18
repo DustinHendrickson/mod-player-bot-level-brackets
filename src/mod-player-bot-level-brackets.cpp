@@ -672,7 +672,19 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
     }
     else
     {
-        newLevel = GetRandomLevelInRange(factionRanges[targetRangeIndex]);
+        const LevelRangeConfig& range = factionRanges[targetRangeIndex];
+        if (range.lower > range.upper)
+        {
+            if (g_BotDistFullDebugMode)
+            {
+                std::string playerFaction = IsAlliancePlayerBot(bot) ? "Alliance" : "Horde";
+                LOG_INFO("server.loading",
+                         "[BotLevelBrackets] AdjustBotToRange: Invalid range {}-{} for {} bot '{}'.",
+                         range.lower, range.upper, playerFaction, bot->GetName());
+            }
+            return;
+        }
+        newLevel = GetRandomLevelInRange(range);
     }
 
     PlayerbotFactory newFactory(bot, newLevel);
