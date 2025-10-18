@@ -21,6 +21,10 @@
 #include <string>
 #include "Player.h"
 
+using namespace Acore::ChatCommands;
+
+using ChatCommandTable = std::vector<Acore::ChatCommands::ChatCommandBuilder>;
+
 // Forward declarations.
 class Guild;
 static bool IsAlliancePlayerBot(Player* bot);
