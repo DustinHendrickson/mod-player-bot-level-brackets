@@ -671,6 +671,8 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
         newLevel = GetRandomLevelInRange(factionRanges[targetRangeIndex]);
     }
 
+    bot->resetTalents(true);
+
     PlayerbotFactory newFactory(bot, newLevel);
     newFactory.Randomize(false);
 
