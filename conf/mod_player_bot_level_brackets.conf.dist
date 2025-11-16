@@ -52,6 +52,15 @@ BotLevelBrackets.FlaggedProcessLimit = 5
 BotLevelBrackets.IgnoreGuildBotsWithRealPlayers = 1
 
 #
+#    BotLevelBrackets.IgnoreArenaTeamBots
+#        Description: When enabled, bots that are members of arena teams are excluded from bot bracket calculations
+#                     and will not be level changed or flagged. This prevents bots in arena teams from being
+#                     changed, which would break team compositions.
+#        Default:     1 (enabled)
+#                     Valid values: 0 (disabled) / 1 (enabled)
+BotLevelBrackets.IgnoreArenaTeamBots = 1
+
+#
 #    BotLevelBrackets.GuildTrackerUpdateFrequency
 #        Description: The frequency (in seconds) at which the persistent guild tracker database is updated.
 #                     This tracks which guilds have real players even when they are offline.

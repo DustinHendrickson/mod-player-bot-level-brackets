@@ -20,6 +20,8 @@
 #include "QueryResult.h"
 #include <string>
 #include "Player.h"
+#include "PlayerbotAIConfig.h"
+#include "ArenaTeamMgr.h"
 
 using namespace Acore::ChatCommands;
 
@@ -51,6 +53,8 @@ static uint8 g_RandomBotMaxLevel = 80;
 static bool g_BotLevelBracketsEnabled = true;
 // Ignore bots in guilds with a real player online. Default is true.
 static bool g_IgnoreGuildBotsWithRealPlayers = true;
+// Ignore bots in arena teams. Default is true.
+static bool g_IgnoreArenaTeamBots = true;
 
 // Use vectors to store the level ranges.
 static std::vector<LevelRangeConfig> g_AllianceLevelRanges;
@@ -111,6 +115,7 @@ static void LoadBotLevelBracketsConfig()
 {
     g_BotLevelBracketsEnabled = sConfigMgr->GetOption<bool>("BotLevelBrackets.Enabled", true);
     g_IgnoreGuildBotsWithRealPlayers = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreGuildBotsWithRealPlayers", true);
+    g_IgnoreArenaTeamBots = sConfigMgr->GetOption<bool>("BotLevelBrackets.IgnoreArenaTeamBots", true);
     
     g_BotDistFullDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.FullDebugMode", false);
     g_BotDistLiteDebugMode = sConfigMgr->GetOption<bool>("BotLevelBrackets.LiteDebugMode", false);
@@ -660,6 +665,14 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
     PlayerbotFactory newFactory(bot, newLevel);
     newFactory.Randomize(false);
 
+    // Force reset talents if equipment persistence is enabled and bot rolled to max level
+    // This is to fix an issue with Playerbots and how Randomization works with Equipment Persistence
+    if (newLevel == g_RandomBotMaxLevel && sPlayerbotAIConfig->equipmentPersistence)
+    {
+        PlayerbotFactory tempFactory(bot, newLevel);
+        tempFactory.InitTalentsTree(false, true, true);
+    }
+
     if (g_BotDistFullDebugMode)
     {
         PlayerbotAI* botAI = sPlayerbotsMgr->GetPlayerbotAI(bot);
@@ -728,6 +741,30 @@ static bool BotInFriendList(Player* bot)
             {
                 LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
             }
+            return true;
+        }
+    }
+    return false;
+}
+
+
+/**
+ * @brief Checks if the given bot is a member of any arena team.
+ *
+ * This function verifies that the provided Player pointer is valid and
+ * checks all arena team slots to see if the bot is in any arena team.
+ *
+ * @param bot Pointer to the Player object representing the bot.
+ * @return true if the bot is in an arena team, false otherwise.
+ */
+static bool BotInArenaTeam(Player* bot)
+{
+    if (!bot)
+        return false;
+    for (uint32 slot = 0; slot < MAX_ARENA_SLOT; ++slot)
+    {
+        if (ArenaTeam* team = sArenaTeamMgr->GetArenaTeamById(bot->GetArenaTeamId(slot)))
+        {
             return true;
         }
     }
@@ -1014,6 +1051,12 @@ static void ProcessPendingLevelResets()
                 continue;
             }
 
+            if (g_IgnoreArenaTeamBots && BotInArenaTeam(bot))
+            {
+                it = g_PendingLevelResets.erase(it);
+                continue;
+            }
+
             if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
             {
                 AdjustBotToRange(bot, targetRange, it->factionRanges);
@@ -1045,6 +1088,16 @@ static void ProcessPendingLevelResets()
 static int GetOrFlagPlayerBracket(Player* player)
 {
     if (IsPlayerBot(player) && IsBotExcluded(player))
+    {
+        return -1;
+    }
+
+    if (IsPlayerBot(player) && g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(player))
+    {
+        return -1;
+    }
+
+    if (IsPlayerBot(player) && g_IgnoreArenaTeamBots && BotInArenaTeam(player))
     {
         return -1;
     }
@@ -1418,6 +1471,10 @@ public:
                 continue;
             }
             if (g_IgnoreFriendListed && BotInFriendList(player))
+            {
+                continue;
+            }
+            if (g_IgnoreArenaTeamBots && BotInArenaTeam(player))
             {
                 continue;
             }
