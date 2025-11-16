@@ -20,6 +20,7 @@
 #include "QueryResult.h"
 #include <string>
 #include "Player.h"
+#include "PlayerbotAIConfig.h"
 
 using namespace Acore::ChatCommands;
 
@@ -659,6 +660,14 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
 
     PlayerbotFactory newFactory(bot, newLevel);
     newFactory.Randomize(false);
+
+    // Force reset talents if equipment persistence is enabled and bot rolled to max level
+    // This is to fix an issue with Playerbots and how Randomization works with Equipment Persistence
+    if (newLevel == g_RandomBotMaxLevel && sPlayerbotAIConfig->equipmentPersistence)
+    {
+        PlayerbotFactory tempFactory(bot, newLevel);
+        tempFactory.InitTalentsTree(false, true, true);
+    }
 
     if (g_BotDistFullDebugMode)
     {
