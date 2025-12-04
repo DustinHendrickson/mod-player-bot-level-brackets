@@ -1130,6 +1130,13 @@ static int GetOrFlagPlayerBracket(Player* player)
         {
             continue;
         }
+        
+        // Skip brackets that Death Knights cannot be assigned to (upper bound < 55)
+        if (player->getClass() == CLASS_DEATH_KNIGHT && factionRanges[i].upper < 55)
+        {
+            continue;
+        }
+        
         int diff = 0;
         if (player->GetLevel() < factionRanges[i].lower)
         {
