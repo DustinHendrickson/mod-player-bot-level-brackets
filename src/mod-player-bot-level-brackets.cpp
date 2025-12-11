@@ -1057,6 +1057,26 @@ static void ProcessPendingLevelResets()
                 continue;
             }
 
+            // Check if bot is now in a group with real players
+            if (Group* group = bot->GetGroup())
+            {
+                bool hasRealPlayer = false;
+                for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                {
+                    Player* member = ref->GetSource();
+                    if (member && member->IsInWorld() && !IsPlayerBot(member))
+                    {
+                        hasRealPlayer = true;
+                        break;
+                    }
+                }
+                if (hasRealPlayer)
+                {
+                    it = g_PendingLevelResets.erase(it);
+                    continue;
+                }
+            }
+
             if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
             {
                 AdjustBotToRange(bot, targetRange, it->factionRanges);
@@ -1110,7 +1130,7 @@ static int GetOrFlagPlayerBracket(Player* player)
             for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
             {
                 Player* member = ref->GetSource();
-                if (member && !IsPlayerBot(member))
+                if (member && member->IsInWorld() && !IsPlayerBot(member))
                 {
                     if (g_BotDistFullDebugMode)
                     {
