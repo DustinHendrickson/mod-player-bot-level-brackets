@@ -942,7 +942,7 @@ static bool IsBotSafeForLevelReset(Player* bot)
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
-            if (member && !IsPlayerBot(member))
+            if (member && member->IsInWorld() && !IsPlayerBot(member))
             {
                 if (g_BotDistFullDebugMode)
                 {
