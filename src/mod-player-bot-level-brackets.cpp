@@ -942,7 +942,7 @@ static bool IsBotSafeForLevelReset(Player* bot)
         for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
             Player* member = ref->GetSource();
-            if (member && !IsPlayerBot(member))
+            if (member && member->IsInWorld() && !IsPlayerBot(member))
             {
                 if (g_BotDistFullDebugMode)
                 {
@@ -1100,6 +1100,27 @@ static int GetOrFlagPlayerBracket(Player* player)
     if (IsPlayerBot(player) && g_IgnoreArenaTeamBots && BotInArenaTeam(player))
     {
         return -1;
+    }
+
+    // Check if bot is in a group with real players - if so, exclude from bracket processing
+    if (IsPlayerBot(player))
+    {
+        if (Group* group = player->GetGroup())
+        {
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && !IsPlayerBot(member))
+                {
+                    if (g_BotDistFullDebugMode)
+                    {
+                        LOG_INFO("server.loading", "[BotLevelBrackets] GetOrFlagPlayerBracket: Bot {} (Level {}) is in group with real player {} - excluding from bracket processing.", 
+                                 player->GetName(), player->GetLevel(), member->GetName());
+                    }
+                    return -1;
+                }
+            }
+        }
     }
 
     int rangeIndex = GetLevelRangeIndex(player->GetLevel(), player->GetTeamId());
