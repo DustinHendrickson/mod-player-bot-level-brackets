@@ -93,10 +93,21 @@ BotLevelBrackets.NumRanges = 9
 
 #
 #    BotLevelBrackets.Dynamic.UseDynamicDistribution
-#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players 
+#        Description: Enables dynamic recalculation of bot distribution percentages based on the number of non-bot players
 #                     present in each level bracket. This overrides any custom brackets in the conf.
 #        Default:     0 (disabled)
 #                     Valid values: 0 (off) / 1 (on)
+#
+#        NOTE: When dynamic distribution is enabled AND the playerbot framework's
+#              AiPlayerbot.SyncLevelWithPlayers is set to 1, brackets above the
+#              highest one containing a real player are given a 0% share, so bots
+#              do not populate level ranges no real player has reached. The freed
+#              percentage is redistributed across the remaining brackets. The
+#              highest-real-player level is seeded from the characters database at
+#              startup and re-read from it whenever no real player is online, so
+#              the cutoff survives restarts and idle periods. Real players are the
+#              accounts whose username does not start with
+#              AiPlayerbot.RandomBotAccountPrefix.
 BotLevelBrackets.Dynamic.UseDynamicDistribution = 0
 
 #    BotLevelBrackets.Dynamic.RealPlayerWeight

@@ -79,7 +79,7 @@ BotLevelBrackets.LiteDebugMode               | Enables lite debug logging for th
 BotLevelBrackets.CheckFrequency              | Frequency (in seconds) at which the bot level distribution check is performed.                                                  | 300     | Positive Integer
 BotLevelBrackets.CheckFlaggedFrequency       | Frequency (in seconds) at which the bot level reset is performed for flagged bots that initially failed safety checks.             | 15      | Positive Integer
 BotLevelBrackets.FlaggedProcessLimit         | Maximum number of flagged bots to process per pending level change step.                                                           | 5       | Positive Integer
-BotLevelBrackets.Dynamic.UseDynamicDistribution | Enables dynamic bot distribution: when on, brackets with more real players get a higher share of bots in their level bracket, based on the weight below. | 0 | 0 (off) / 1 (on)
+BotLevelBrackets.Dynamic.UseDynamicDistribution | Enables dynamic bot distribution: when on, brackets with more real players get a higher share of bots in their level bracket, based on the weight below. When this is on *and* `AiPlayerbot.SyncLevelWithPlayers = 1`, brackets above the highest real player's level are also given a 0% share (see "Real Player Level Cutoff" below). | 0 | 0 (off) / 1 (on)
 BotLevelBrackets.Dynamic.RealPlayerWeight | Controls how much bots "follow" real player activity when dynamic distribution is enabled. 0.0 = bots always spread evenly; 1.0 = minimal effect; 10.0 = heavy effect; higher values = more bots go where players are, but the effect is scaled. | 1.0 | ≥ 0.0 (float)
 BotLevelBrackets.Dynamic.SyncFactions      | Enables synchronized brackets and weighting between Alliance and Horde factions when Dynamic Distribution is also enabled.                        | 0       | 0 (off) / 1 (on)
 BotLevelBrackets.IgnoreFriendListed           | Ignores bots that are on real players' friend lists from any bracket calculations.                                              | 1       | 0 (off) / 1 (on)
@@ -89,6 +89,17 @@ BotLevelBrackets.NumRanges                     | Number of level brackets used f
 BotLevelBrackets.ExcludeNames                  | Comma-separated list of case insensitive bot names to exclude from all bracket checks.                                                            |         | String
 
 **IMPORTANT:** If you extend the number of brackets beyond the default 9, you must update both your `mod_player_bot_level_brackets.conf` file and the accompanying `mod_player_bot_level_brackets.conf.dist` file to include configuration lines for the additional ranges (e.g. Range10, Range11, etc.), ensuring that the sum of the Pct values remains 100.
+
+### Real Player Level Cutoff
+
+When `BotLevelBrackets.Dynamic.UseDynamicDistribution = 1` **and** the playerbot framework's `AiPlayerbot.SyncLevelWithPlayers = 1`, the module caps the bot distribution at the highest level any real player has reached. Every bracket above the highest one containing a real player is given a 0% share, and that freed percentage is redistributed across the remaining brackets. This keeps bots out of level ranges no real player has reached yet, complementing the playerbot framework's own level-sync behaviour.
+
+The cutoff level is determined as follows:
+
+- While at least one real player is online, the highest real-player bracket is taken from the live population.
+- When no real player is online — including immediately after a server restart — it is read from the characters database (the highest-level character on any non-bot account, per faction). Real players are the accounts whose username does **not** start with `AiPlayerbot.RandomBotAccountPrefix`.
+
+Because the value is persisted in the database rather than only tracked in memory, the cutoff stays in effect across restarts and idle periods instead of letting bots repopulate the full level range while the server is unattended.
 
 ### Alliance Level Brackets Configuration
 *The percentages below must sum to 100.*

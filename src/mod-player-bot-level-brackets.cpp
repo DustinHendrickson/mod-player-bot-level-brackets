@@ -72,6 +72,21 @@ static uint32 g_FlaggedProcessLimit = 5; // 0 = unlimited
 // Real player weight to boost bracket contributions.
 static float g_RealPlayerWeight = 1.0f;
 
+// Highest bracket index containing a real player (per faction). -1 = unset/no
+// cutoff. Populated by the dynamic distribution pass and consumed by
+// ClampAndBalanceBrackets to zero out brackets above the highest real player.
+static int g_HighestAllianceRealPlayerBracket = -1;
+static int g_HighestHordeRealPlayerBracket = -1;
+
+// Mirrors AiPlayerbot.SyncLevelWithPlayers. When true (config value == 1) the
+// highest-real-player bracket cutoff in ClampAndBalanceBrackets is active.
+static bool g_AiPlayerbotSyncLevelWithPlayers = false;
+
+// Mirrors AiPlayerbot.RandomBotAccountPrefix. Read directly from the config
+// (not from sPlayerbotAIConfig) so it is valid regardless of module load order.
+// Accounts whose username does not start with this prefix are real players.
+static std::string g_RandomBotAccountPrefix = "rndbot";
+
 // If true, synchronize bracket logic and real player influence across both factions.
 // This option requires both Alliance and Horde bracket definitions to match perfectly.
 // When enabled, all real players (regardless of faction) affect the dynamic distribution for both factions.
@@ -142,6 +157,8 @@ static void LoadBotLevelBracketsConfig()
     // Load the bot level restrictions.
     g_RandomBotMinLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMinLevel", 1));
     g_RandomBotMaxLevel = static_cast<uint8>(sConfigMgr->GetOption<uint32>("AiPlayerbot.RandomBotMaxLevel", 80));
+    g_AiPlayerbotSyncLevelWithPlayers = sConfigMgr->GetOption<uint32>("AiPlayerbot.SyncLevelWithPlayers", 0) == 1;
+    g_RandomBotAccountPrefix = sConfigMgr->GetOption<std::string>("AiPlayerbot.RandomBotAccountPrefix", "rndbot");
 
     // Load the custom number of brackets.
     g_NumRanges = static_cast<uint8>(sConfigMgr->GetOption<uint32>("BotLevelBrackets.NumRanges", 9));
@@ -570,6 +587,127 @@ static int GetLevelRangeIndex(uint8 level, uint8 teamID)
     return -1;
 }
 
+/**
+ * @brief Refreshes the highest-real-player bracket trackers from the characters database.
+ *
+ * Looks up the highest-level character owned by a real (non random bot) account for each
+ * faction and updates g_HighestAllianceRealPlayerBracket / g_HighestHordeRealPlayerBracket.
+ * Real accounts are identified by their username not starting with the random bot account
+ * prefix (AiPlayerbot.RandomBotAccountPrefix).
+ *
+ * Called at startup and whenever the online scan finds no real players, so the dynamic
+ * distribution cutoff survives server restarts and stays in effect while everyone is
+ * offline, instead of silently reverting to the full bracket distribution.
+ *
+ * @param refreshAlliance Update the Alliance tracker (ignored when SyncFactions is enabled).
+ * @param refreshHorde Update the Horde tracker (ignored when SyncFactions is enabled).
+ */
+static void RefreshHighestRealPlayerBracketsFromDB(bool refreshAlliance, bool refreshHorde)
+{
+    std::string prefix = g_RandomBotAccountPrefix;
+    LoginDatabase.EscapeString(prefix);
+
+    QueryResult accountResult = LoginDatabase.Query("SELECT id FROM account WHERE username NOT LIKE '{}%'", prefix);
+    if (!accountResult)
+    {
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] DB cutoff refresh: no real player accounts found.");
+        }
+        return;
+    }
+
+    std::string accountIds;
+    do
+    {
+        if (!accountIds.empty())
+        {
+            accountIds += ',';
+        }
+        accountIds += std::to_string(accountResult->Fetch()->Get<uint32>());
+    } while (accountResult->NextRow());
+
+    QueryResult charResult = CharacterDatabase.Query("SELECT race, MAX(level) FROM characters WHERE account IN ({}) GROUP BY race", accountIds);
+    if (!charResult)
+    {
+        if (g_BotDistFullDebugMode)
+        {
+            LOG_INFO("server.loading", "[BotLevelBrackets] DB cutoff refresh: real player accounts have no characters.");
+        }
+        return;
+    }
+
+    int highestAllianceLevel = -1;
+    int highestHordeLevel = -1;
+    do
+    {
+        Field* fields = charResult->Fetch();
+        uint8 race = fields[0].Get<uint8>();
+        uint8 level = fields[1].Get<uint8>();
+        if (Player::TeamIdForRace(race) == TEAM_ALLIANCE)
+        {
+            highestAllianceLevel = std::max(highestAllianceLevel, static_cast<int>(level));
+        }
+        else if (Player::TeamIdForRace(race) == TEAM_HORDE)
+        {
+            highestHordeLevel = std::max(highestHordeLevel, static_cast<int>(level));
+        }
+    } while (charResult->NextRow());
+
+    auto bracketForLevel = [](int level, std::vector<LevelRangeConfig> const& ranges, uint8 teamID) -> int
+    {
+        if (level < 0)
+        {
+            return -1;
+        }
+        int index = GetLevelRangeIndex(static_cast<uint8>(level), teamID);
+        if (index >= 0)
+        {
+            return index;
+        }
+        // Level sits in a gap or above all brackets (e.g. above RandomBotMaxLevel):
+        // fall back to the highest bracket starting at or below it.
+        for (int i = static_cast<int>(g_NumRanges) - 1; i >= 0; --i)
+        {
+            if (ranges[i].lower <= level)
+            {
+                return i;
+            }
+        }
+        return -1;
+    };
+
+    int allianceBracket = bracketForLevel(highestAllianceLevel, g_AllianceLevelRanges, TEAM_ALLIANCE);
+    int hordeBracket = bracketForLevel(highestHordeLevel, g_HordeLevelRanges, TEAM_HORDE);
+
+    if (g_SyncFactions)
+    {
+        int combined = std::max(allianceBracket, hordeBracket);
+        if (combined >= 0)
+        {
+            g_HighestAllianceRealPlayerBracket = combined;
+            g_HighestHordeRealPlayerBracket = combined;
+        }
+    }
+    else
+    {
+        if (refreshAlliance && allianceBracket >= 0)
+        {
+            g_HighestAllianceRealPlayerBracket = allianceBracket;
+        }
+        if (refreshHorde && hordeBracket >= 0)
+        {
+            g_HighestHordeRealPlayerBracket = hordeBracket;
+        }
+    }
+
+    if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
+    {
+        LOG_INFO("server.loading", "[BotLevelBrackets] DB cutoff refresh: highest real player level Alliance {}, Horde {} -> bracket cutoff Alliance {}, Horde {}.",
+                 highestAllianceLevel, highestHordeLevel, g_HighestAllianceRealPlayerBracket, g_HighestHordeRealPlayerBracket);
+    }
+}
+
 
 /**
  * @brief Returns a random level within the specified range.
@@ -821,6 +959,30 @@ static void ClampAndBalanceBrackets()
             g_HordeLevelRanges[i].desiredPercent = 0;
         }
     }
+
+    // Dynamic-distribution cutoff: zero out any bracket above the highest one
+    // that currently contains a real player. The leftover percentage is
+    // redistributed by the auto-adjust pass below. Gated on
+    // AiPlayerbot.SyncLevelWithPlayers so this only activates when the bot
+    // framework is configured to keep bots in sync with real-player levels.
+    if (g_UseDynamicDistribution && g_AiPlayerbotSyncLevelWithPlayers)
+    {
+        if (g_HighestAllianceRealPlayerBracket >= 0)
+        {
+            for (uint8 i = static_cast<uint8>(g_HighestAllianceRealPlayerBracket + 1); i < g_NumRanges; ++i)
+            {
+                g_AllianceLevelRanges[i].desiredPercent = 0;
+            }
+        }
+        if (g_HighestHordeRealPlayerBracket >= 0)
+        {
+            for (uint8 i = static_cast<uint8>(g_HighestHordeRealPlayerBracket + 1); i < g_NumRanges; ++i)
+            {
+                g_HordeLevelRanges[i].desiredPercent = 0;
+            }
+        }
+    }
+
     uint32 totalAlliance = 0;
     uint32 totalHorde = 0;
     for (uint8 i = 0; i < g_NumRanges; ++i)
@@ -1268,6 +1430,12 @@ public:
             LOG_INFO("server.loading", "[BotLevelBrackets] Module disabled via configuration.");
             return;
         }
+        // Seed the highest-real-player cutoff from the characters DB so it is
+        // already in effect after a restart, before any real player logs in.
+        if (g_UseDynamicDistribution && g_AiPlayerbotSyncLevelWithPlayers)
+        {
+            RefreshHighestRealPlayerBracketsFromDB(true, true);
+        }
         if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Module loaded. Check frequency: {} seconds, Check flagged frequency: {}.", g_BotDistCheckFrequency, g_BotDistFlaggedCheckFrequency);
@@ -1378,6 +1546,48 @@ public:
                 {
                     hordeRealCounts[rangeIndex]++;
                     totalHordeReal++;
+                }
+            }
+
+            // Track the highest bracket index that contains a real player for
+            // each faction so ClampAndBalanceBrackets can cut off everything
+            // above it. When this scan finds no real players online (e.g.
+            // nobody logged in, or right after a restart), fall back to the
+            // characters database instead of leaving the cutoff unset and
+            // snapping the bots back to the full bracket distribution.
+            int newHighestAlliance = -1;
+            int newHighestHorde = -1;
+            for (int i = static_cast<int>(g_NumRanges) - 1; i >= 0; --i)
+            {
+                if (newHighestAlliance < 0 && allianceRealCounts[i] > 0)
+                    newHighestAlliance = i;
+                if (newHighestHorde < 0 && hordeRealCounts[i] > 0)
+                    newHighestHorde = i;
+                if (newHighestAlliance >= 0 && newHighestHorde >= 0)
+                    break;
+            }
+            if (g_SyncFactions)
+            {
+                int combined = std::max(newHighestAlliance, newHighestHorde);
+                if (combined >= 0)
+                {
+                    g_HighestAllianceRealPlayerBracket = combined;
+                    g_HighestHordeRealPlayerBracket = combined;
+                }
+                else if (g_AiPlayerbotSyncLevelWithPlayers)
+                {
+                    RefreshHighestRealPlayerBracketsFromDB(true, true);
+                }
+            }
+            else
+            {
+                if (newHighestAlliance >= 0)
+                    g_HighestAllianceRealPlayerBracket = newHighestAlliance;
+                if (newHighestHorde >= 0)
+                    g_HighestHordeRealPlayerBracket = newHighestHorde;
+                if (g_AiPlayerbotSyncLevelWithPlayers && (newHighestAlliance < 0 || newHighestHorde < 0))
+                {
+                    RefreshHighestRealPlayerBracketsFromDB(newHighestAlliance < 0, newHighestHorde < 0);
                 }
             }
 
@@ -1916,6 +2126,10 @@ public:
     static bool HandleReloadConfig(ChatHandler* handler)
     {
         LoadBotLevelBracketsConfig();
+        if (g_UseDynamicDistribution && g_AiPlayerbotSyncLevelWithPlayers)
+        {
+            RefreshHighestRealPlayerBracketsFromDB(true, true);
+        }
         handler->SendSysMessage("Bot level brackets config reloaded.");
         return true;
     }
