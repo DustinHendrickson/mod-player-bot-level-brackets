@@ -1015,16 +1015,38 @@ static void ClampAndBalanceBrackets()
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Alliance: Sum of percentages is {} (expected 100). Auto adjusting.", totalAlliance);
         }
-        int missing = 100 - totalAlliance;
-        while (missing > 0)
+        int delta = 100 - static_cast<int>(totalAlliance);
+        while (delta != 0)
         {
-            for (uint8 i = 0; i < g_NumRanges && missing > 0; ++i)
+            bool changed = false;
+            for (uint8 i = 0; i < g_NumRanges && delta != 0; ++i)
             {
-                if (g_AllianceLevelRanges[i].lower <= g_AllianceLevelRanges[i].upper && g_AllianceLevelRanges[i].desiredPercent > 0)
+                if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
                 {
-                    g_AllianceLevelRanges[i].desiredPercent++;
-                    missing--;
+                    continue;
                 }
+
+                if (delta > 0)
+                {
+                    if (g_AllianceLevelRanges[i].desiredPercent > 0)
+                    {
+                        g_AllianceLevelRanges[i].desiredPercent++;
+                        --delta;
+                        changed = true;
+                    }
+                }
+                else if (g_AllianceLevelRanges[i].desiredPercent > 0)
+                {
+                    g_AllianceLevelRanges[i].desiredPercent--;
+                    ++delta;
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                LOG_ERROR("server.loading", "[BotLevelBrackets] Alliance: Unable to normalize bracket percentages to 100.");
+                break;
             }
         }
     }
@@ -1034,16 +1056,38 @@ static void ClampAndBalanceBrackets()
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Horde: Sum of percentages is {} (expected 100). Auto adjusting.", totalHorde);
         }
-        int missing = 100 - totalHorde;
-        while (missing > 0)
+        int delta = 100 - static_cast<int>(totalHorde);
+        while (delta != 0)
         {
-            for (uint8 i = 0; i < g_NumRanges && missing > 0; ++i)
+            bool changed = false;
+            for (uint8 i = 0; i < g_NumRanges && delta != 0; ++i)
             {
-                if (g_HordeLevelRanges[i].lower <= g_HordeLevelRanges[i].upper && g_HordeLevelRanges[i].desiredPercent > 0)
+                if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
                 {
-                    g_HordeLevelRanges[i].desiredPercent++;
-                    missing--;
+                    continue;
                 }
+
+                if (delta > 0)
+                {
+                    if (g_HordeLevelRanges[i].desiredPercent > 0)
+                    {
+                        g_HordeLevelRanges[i].desiredPercent++;
+                        --delta;
+                        changed = true;
+                    }
+                }
+                else if (g_HordeLevelRanges[i].desiredPercent > 0)
+                {
+                    g_HordeLevelRanges[i].desiredPercent--;
+                    ++delta;
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                LOG_ERROR("server.loading", "[BotLevelBrackets] Horde: Unable to normalize bracket percentages to 100.");
+                break;
             }
         }
     }
