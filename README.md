@@ -1,3 +1,6 @@
+> [!CAUTION]
+> **MODULE MERGED INTO PLAYERBOTS** This module's code has been integrated with the Playerbots module. You do not need this module anymore, it's only here for preservation of the original module code.
+
 # AzerothCore Module: Bot Level Brackets
 
 <p align="center">
