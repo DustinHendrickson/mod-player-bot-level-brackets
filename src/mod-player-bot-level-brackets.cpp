@@ -15,11 +15,11 @@
 #include <utility>
 #include <limits>
 #include <algorithm>
+#include <unordered_set>
 #include "PlayerbotFactory.h"
 #include "DatabaseEnv.h"
 #include "QueryResult.h"
 #include <string>
-#include "Player.h"
 #include "PlayerbotAIConfig.h"
 #include "ArenaTeamMgr.h"
 
@@ -77,8 +77,8 @@ static float g_RealPlayerWeight = 1.0f;
 // When enabled, all real players (regardless of faction) affect the dynamic distribution for both factions.
 static bool g_SyncFactions = false;
 
-// Array for character social list friends
-std::vector<uint64> g_SocialFriendsList;
+// Hash set for character social list friends.
+std::unordered_set<uint64> g_SocialFriendsList;
 
 // Array for excluded bot names.
 static std::vector<std::string> g_ExcludeBotNames;
@@ -95,7 +95,101 @@ struct PendingResetEntry
     int targetRange;
     const LevelRangeConfig* factionRanges;
 };
+
+struct DistributionSkipStats
+{
+    uint32 nullPlayer = 0;
+    uint32 notInWorld = 0;
+    uint32 notManagedRandomBot = 0;
+    uint32 excludedByName = 0;
+    uint32 guildWithRealPlayer = 0;
+    uint32 friendListed = 0;
+    uint32 arenaTeam = 0;
+    uint32 noBracketAssignment = 0;
+};
+
+struct PendingResetSkipStats
+{
+    uint32 notFound = 0;
+    uint32 invalidState = 0;
+    uint32 notManagedRandomBot = 0;
+    uint32 excludedByName = 0;
+    uint32 guildWithRealPlayer = 0;
+    uint32 friendListed = 0;
+    uint32 arenaTeam = 0;
+    uint32 groupedWithRealPlayer = 0;
+    uint32 deferredUnsafe = 0;
+    uint32 processed = 0;
+};
+
 static std::vector<PendingResetEntry> g_PendingLevelResets;
+static std::unordered_set<uint64> g_PendingResetGuids;
+
+static bool IsSkipDiagnosticsEnabled()
+{
+    return g_BotDistFullDebugMode || g_BotDistLiteDebugMode;
+}
+
+static bool IsBotOutsideManagedLevelBounds(Player* bot)
+{
+    return bot && (bot->GetLevel() < g_RandomBotMinLevel || bot->GetLevel() > g_RandomBotMaxLevel);
+}
+
+static void LogSkippedBot(char const* phase, Player* bot, char const* reason)
+{
+    if (!g_BotDistFullDebugMode || !bot)
+    {
+        return;
+    }
+
+    LOG_INFO("server.loading",
+             "[BotLevelBrackets] {} skip: bot '{}' level {} skipped because {} ({} managed bounds).",
+             phase,
+             bot->GetName(),
+             bot->GetLevel(),
+             reason,
+             IsBotOutsideManagedLevelBounds(bot) ? "outside" : "within");
+}
+
+static void LogDistributionSkipSummary(DistributionSkipStats const& stats)
+{
+    if (!IsSkipDiagnosticsEnabled())
+    {
+        return;
+    }
+
+    LOG_INFO("server.loading",
+             "[BotLevelBrackets] Distribution skip summary: null={}, out_of_world={}, unmanaged={}, excluded={}, guild={}, friend={}, arena={}, no_bracket_assignment={}.",
+             stats.nullPlayer,
+             stats.notInWorld,
+             stats.notManagedRandomBot,
+             stats.excludedByName,
+             stats.guildWithRealPlayer,
+             stats.friendListed,
+             stats.arenaTeam,
+             stats.noBracketAssignment);
+}
+
+static void LogPendingResetSkipSummary(PendingResetSkipStats const& stats)
+{
+    if (!IsSkipDiagnosticsEnabled())
+    {
+        return;
+    }
+
+    LOG_INFO("server.loading",
+             "[BotLevelBrackets] Pending reset summary: processed={}, not_found={}, invalid_state={}, unmanaged={}, excluded={}, guild={}, friend={}, arena={}, grouped={}, deferred_unsafe={}.",
+             stats.processed,
+             stats.notFound,
+             stats.invalidState,
+             stats.notManagedRandomBot,
+             stats.excludedByName,
+             stats.guildWithRealPlayer,
+             stats.friendListed,
+             stats.arenaTeam,
+             stats.groupedWithRealPlayer,
+             stats.deferredUnsafe);
+}
 
 
 /**
@@ -132,9 +226,11 @@ static void LoadBotLevelBracketsConfig()
     g_ExcludeBotNames.clear();
     std::istringstream f(excludeNames);
     std::string s;
-    while (getline(f, s, ',')) {
+    while (getline(f, s, ','))
+    {
         s.erase(std::remove_if(s.begin(), s.end(), ::isspace), s.end());
-        if (!s.empty()) {
+        if (!s.empty())
+        {
             g_ExcludeBotNames.push_back(s);
         }
     }
@@ -228,6 +324,11 @@ static bool IsPlayerRandomBot(Player* player)
     return sRandomPlayerbotMgr.IsRandomBot(player);
 }
 
+static bool IsEligibleRandomBot(Player* player)
+{
+    return IsPlayerBot(player) && IsPlayerRandomBot(player);
+}
+
 
 /**
  * @brief Checks if the given Player bot belongs to the Alliance team.
@@ -258,6 +359,83 @@ static bool IsHordePlayerBot(Player* bot)
     return bot && (bot->GetTeamId() == TEAM_HORDE);
 }
 
+static uint64 GetPendingGuidKey(ObjectGuid const& guid)
+{
+    return guid.GetRawValue();
+}
+
+static void RebuildPendingResetGuidSet()
+{
+    g_PendingResetGuids.clear();
+    for (PendingResetEntry const& entry : g_PendingLevelResets)
+    {
+        g_PendingResetGuids.insert(GetPendingGuidKey(entry.botGuid));
+    }
+}
+
+static bool ValidatePendingResetConsistency(char const* context)
+{
+    if (g_PendingLevelResets.size() == g_PendingResetGuids.size())
+    {
+        return true;
+    }
+
+    LOG_ERROR("server.loading",
+              "[BotLevelBrackets] Pending reset consistency mismatch at {} (vector={}, set={}). Rebuilding set.",
+              context, g_PendingLevelResets.size(), g_PendingResetGuids.size());
+
+    RebuildPendingResetGuidSet();
+
+    if (g_PendingLevelResets.size() != g_PendingResetGuids.size())
+    {
+        LOG_ERROR("server.loading",
+                  "[BotLevelBrackets] Pending reset consistency rebuild failed at {} (vector={}, set={}).",
+                  context, g_PendingLevelResets.size(), g_PendingResetGuids.size());
+        return false;
+    }
+
+    return true;
+}
+
+static bool EnqueuePendingLevelReset(ObjectGuid const& guid, int targetRange, LevelRangeConfig const* factionRanges)
+{
+    uint64 guidKey = GetPendingGuidKey(guid);
+    if (g_PendingResetGuids.count(guidKey) > 0)
+    {
+        return false;
+    }
+
+    g_PendingLevelResets.push_back({ guid, targetRange, factionRanges });
+    g_PendingResetGuids.insert(guidKey);
+    ValidatePendingResetConsistency("EnqueuePendingLevelReset");
+    return true;
+}
+
+static void RemovePendingResetByGuid(ObjectGuid const& guid)
+{
+    uint64 guidKey = GetPendingGuidKey(guid);
+    g_PendingResetGuids.erase(guidKey);
+
+    g_PendingLevelResets.erase(
+        std::remove_if(
+            g_PendingLevelResets.begin(),
+            g_PendingLevelResets.end(),
+            [guid](PendingResetEntry const& entry) { return entry.botGuid == guid; }
+        ),
+        g_PendingLevelResets.end()
+    );
+
+    ValidatePendingResetConsistency("RemovePendingResetByGuid");
+}
+
+static std::vector<PendingResetEntry>::iterator ErasePendingResetEntry(std::vector<PendingResetEntry>::iterator it)
+{
+    g_PendingResetGuids.erase(GetPendingGuidKey(it->botGuid));
+    std::vector<PendingResetEntry>::iterator next = g_PendingLevelResets.erase(it);
+    ValidatePendingResetConsistency("ErasePendingResetEntry");
+    return next;
+}
+
 
 /**
  * @brief Removes a bot from the list of pending level resets.
@@ -270,15 +448,12 @@ static bool IsHordePlayerBot(Player* bot)
  */
 static void RemoveBotFromPendingResets(Player* bot)
 {
-    ObjectGuid guid = bot->GetGUID();
-    g_PendingLevelResets.erase(
-        std::remove_if(
-            g_PendingLevelResets.begin(),
-            g_PendingLevelResets.end(),
-            [guid](const PendingResetEntry& entry) { return entry.botGuid == guid; }
-        ),
-        g_PendingLevelResets.end()
-    );
+    if (!bot)
+    {
+        return;
+    }
+
+    RemovePendingResetByGuid(bot->GetGUID());
 }
 
 
@@ -287,7 +462,7 @@ static void RemoveBotFromPendingResets(Player* bot)
  *
  * This function clears the existing g_SocialFriendsList and queries the CharacterDatabase
  * for all GUIDs marked as friends (flags = 1) in the character_social table. Each retrieved
- * GUID is added to the g_SocialFriendsList vector. If full debug mode is enabled, the function
+ * GUID is added to the g_SocialFriendsList set. If full debug mode is enabled, the function
  * logs the loading process and each GUID added.
  *
  * The function returns immediately if the query fails or if no results are found.
@@ -305,6 +480,9 @@ static void LoadSocialFriendList()
     {
         return;
     }
+
+    g_SocialFriendsList.reserve(static_cast<size_t>(result->GetRowCount()));
+
     if (g_BotDistFullDebugMode)
     {
         LOG_INFO("server.loading", "[BotLevelBrackets] Fetching Social Friend List GUIDs into array");
@@ -313,10 +491,10 @@ static void LoadSocialFriendList()
     do
     {
         uint32 socialFriendGUID = result->Fetch()->Get<uint32>();
-        g_SocialFriendsList.push_back(static_cast<uint64>(socialFriendGUID));
+        g_SocialFriendsList.insert(static_cast<uint64>(socialFriendGUID));
         if (g_BotDistFullDebugMode)
         {
-            LOG_INFO("server.load", "[BotLevelBrackets] Adding GUID {} to Social Friend List", socialFriendGUID);
+            LOG_INFO("server.loading", "[BotLevelBrackets] Adding GUID {} to Social Friend List", socialFriendGUID);
         }
     } while (result->NextRow());
 }
@@ -601,6 +779,11 @@ static uint8 GetRandomLevelInRange(const LevelRangeConfig& range)
  */
 static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRangeConfig* factionRanges)
 {
+    if (!IsEligibleRandomBot(bot))
+    {
+        return;
+    }
+
     if (!bot || !bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
     {
         return;
@@ -733,17 +916,15 @@ static bool BotInFriendList(Player* bot)
         return false;
     }
 
-    for (size_t i = 0; i < g_SocialFriendsList.size(); ++i)
+    if (g_SocialFriendsList.count(bot->GetGUID().GetRawValue()) > 0)
     {
-        if (g_SocialFriendsList[i] == bot->GetGUID().GetRawValue())
+        if (g_BotDistFullDebugMode)
         {
-            if (g_BotDistFullDebugMode)
-            {
-                LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
-            }
-            return true;
+            LOG_INFO("server.loading", "[BotLevelBrackets] Bot {} (Level {}) is on a Real Player's friends list", bot->GetName(), bot->GetLevel());
         }
+        return true;
     }
+
     return false;
 }
 
@@ -834,16 +1015,38 @@ static void ClampAndBalanceBrackets()
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Alliance: Sum of percentages is {} (expected 100). Auto adjusting.", totalAlliance);
         }
-        int missing = 100 - totalAlliance;
-        while (missing > 0)
+        int delta = 100 - static_cast<int>(totalAlliance);
+        while (delta != 0)
         {
-            for (uint8 i = 0; i < g_NumRanges && missing > 0; ++i)
+            bool changed = false;
+            for (uint8 i = 0; i < g_NumRanges && delta != 0; ++i)
             {
-                if (g_AllianceLevelRanges[i].lower <= g_AllianceLevelRanges[i].upper && g_AllianceLevelRanges[i].desiredPercent > 0)
+                if (g_AllianceLevelRanges[i].lower > g_AllianceLevelRanges[i].upper)
                 {
-                    g_AllianceLevelRanges[i].desiredPercent++;
-                    missing--;
+                    continue;
                 }
+
+                if (delta > 0)
+                {
+                    if (g_AllianceLevelRanges[i].desiredPercent > 0)
+                    {
+                        g_AllianceLevelRanges[i].desiredPercent++;
+                        --delta;
+                        changed = true;
+                    }
+                }
+                else if (g_AllianceLevelRanges[i].desiredPercent > 0)
+                {
+                    g_AllianceLevelRanges[i].desiredPercent--;
+                    ++delta;
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                LOG_ERROR("server.loading", "[BotLevelBrackets] Alliance: Unable to normalize bracket percentages to 100.");
+                break;
             }
         }
     }
@@ -853,16 +1056,38 @@ static void ClampAndBalanceBrackets()
         {
             LOG_INFO("server.loading", "[BotLevelBrackets] Horde: Sum of percentages is {} (expected 100). Auto adjusting.", totalHorde);
         }
-        int missing = 100 - totalHorde;
-        while (missing > 0)
+        int delta = 100 - static_cast<int>(totalHorde);
+        while (delta != 0)
         {
-            for (uint8 i = 0; i < g_NumRanges && missing > 0; ++i)
+            bool changed = false;
+            for (uint8 i = 0; i < g_NumRanges && delta != 0; ++i)
             {
-                if (g_HordeLevelRanges[i].lower <= g_HordeLevelRanges[i].upper && g_HordeLevelRanges[i].desiredPercent > 0)
+                if (g_HordeLevelRanges[i].lower > g_HordeLevelRanges[i].upper)
                 {
-                    g_HordeLevelRanges[i].desiredPercent++;
-                    missing--;
+                    continue;
                 }
+
+                if (delta > 0)
+                {
+                    if (g_HordeLevelRanges[i].desiredPercent > 0)
+                    {
+                        g_HordeLevelRanges[i].desiredPercent++;
+                        --delta;
+                        changed = true;
+                    }
+                }
+                else if (g_HordeLevelRanges[i].desiredPercent > 0)
+                {
+                    g_HordeLevelRanges[i].desiredPercent--;
+                    ++delta;
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                LOG_ERROR("server.loading", "[BotLevelBrackets] Horde: Unable to normalize bracket percentages to 100.");
+                break;
             }
         }
     }
@@ -1002,6 +1227,10 @@ static bool IsBotExcluded(Player* bot)
  */
 static void ProcessPendingLevelResets()
 {
+    ValidatePendingResetConsistency("ProcessPendingLevelResets/Start");
+    bool collectSkipDiagnostics = IsSkipDiagnosticsEnabled();
+    PendingResetSkipStats skipStats;
+
     if (g_BotDistFullDebugMode)
     {
         LOG_INFO("server.loading", "[BotLevelBrackets] Processing {} pending resets...", g_PendingLevelResets.size());
@@ -1013,85 +1242,145 @@ static void ProcessPendingLevelResets()
 
     // Limit the number of resets processed in one cycle if configured.
     uint32 processed = 0;
-    for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end(); )
+    for (auto it = g_PendingLevelResets.begin(); it != g_PendingLevelResets.end();)
+    {
+        if (g_FlaggedProcessLimit > 0 && processed >= g_FlaggedProcessLimit)
         {
-            if (g_FlaggedProcessLimit > 0 && processed >= g_FlaggedProcessLimit)
-                break;
+            break;
+        }
 
-            Player* bot = ObjectAccessor::FindPlayer(it->botGuid);
+        Player* bot = ObjectAccessor::FindPlayer(it->botGuid);
 
-            if (!bot)
+        if (!bot)
+        {
+            if (collectSkipDiagnostics)
             {
-                it = g_PendingLevelResets.erase(it);
-                continue;
+                ++skipStats.notFound;
             }
+            it = ErasePendingResetEntry(it);
+            continue;
+        }
 
-            if (!bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+        if (!bot->IsInWorld() || !bot->GetSession() || bot->GetSession()->isLogingOut() || bot->IsDuringRemoveFromWorld())
+        {
+            if (collectSkipDiagnostics)
             {
-                it = g_PendingLevelResets.erase(it);
-                continue;
+                ++skipStats.invalidState;
+                LogSkippedBot("Pending reset", bot, "invalid world/session state");
             }
+            it = ErasePendingResetEntry(it);
+            continue;
+        }
 
-            if (IsBotExcluded(bot))
+        if (!IsEligibleRandomBot(bot))
+        {
+            if (collectSkipDiagnostics)
             {
-                it = g_PendingLevelResets.erase(it);
-                continue;
+                ++skipStats.notManagedRandomBot;
+                LogSkippedBot("Pending reset", bot, "not a managed random bot");
             }
+            it = ErasePendingResetEntry(it);
+            continue;
+        }
 
-            int targetRange = it->targetRange;
-            if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
+        if (IsBotExcluded(bot))
+        {
+            if (collectSkipDiagnostics)
             {
-                it = g_PendingLevelResets.erase(it);
-                continue;
+                ++skipStats.excludedByName;
+                LogSkippedBot("Pending reset", bot, "excluded by name");
             }
+            it = ErasePendingResetEntry(it);
+            continue;
+        }
 
-            if (g_IgnoreFriendListed && BotInFriendList(bot))
+        int targetRange = it->targetRange;
+        if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(bot))
+        {
+            if (collectSkipDiagnostics)
             {
-                it = g_PendingLevelResets.erase(it);
-                continue;
+                ++skipStats.guildWithRealPlayer;
+                LogSkippedBot("Pending reset", bot, "guild with real players");
             }
+            it = ErasePendingResetEntry(it);
+            continue;
+        }
 
-            if (g_IgnoreArenaTeamBots && BotInArenaTeam(bot))
+        if (g_IgnoreFriendListed && BotInFriendList(bot))
+        {
+            if (collectSkipDiagnostics)
             {
-                it = g_PendingLevelResets.erase(it);
-                continue;
+                ++skipStats.friendListed;
+                LogSkippedBot("Pending reset", bot, "real player friend list");
             }
+            it = ErasePendingResetEntry(it);
+            continue;
+        }
 
-            // Check if bot is now in a group with real players
-            if (Group* group = bot->GetGroup())
+        if (g_IgnoreArenaTeamBots && BotInArenaTeam(bot))
+        {
+            if (collectSkipDiagnostics)
             {
-                bool hasRealPlayer = false;
-                for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+                ++skipStats.arenaTeam;
+                LogSkippedBot("Pending reset", bot, "arena team member");
+            }
+            it = ErasePendingResetEntry(it);
+            continue;
+        }
+
+        // Check if bot is now in a group with real players
+        if (Group* group = bot->GetGroup())
+        {
+            bool hasRealPlayer = false;
+            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            {
+                Player* member = ref->GetSource();
+                if (member && member->IsInWorld() && !IsPlayerBot(member))
                 {
-                    Player* member = ref->GetSource();
-                    if (member && member->IsInWorld() && !IsPlayerBot(member))
-                    {
-                        hasRealPlayer = true;
-                        break;
-                    }
-                }
-                if (hasRealPlayer)
-                {
-                    it = g_PendingLevelResets.erase(it);
-                    continue;
+                    hasRealPlayer = true;
+                    break;
                 }
             }
-
-            if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
+            if (hasRealPlayer)
             {
-                AdjustBotToRange(bot, targetRange, it->factionRanges);
-                if (g_BotDistFullDebugMode)
+                if (collectSkipDiagnostics)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Bot '{}' successfully reset to level range {}-{}.", bot->GetName(), it->factionRanges[targetRange].lower, it->factionRanges[targetRange].upper);
+                    ++skipStats.groupedWithRealPlayer;
+                    LogSkippedBot("Pending reset", bot, "grouped with real player");
                 }
-                it = g_PendingLevelResets.erase(it);
-                ++processed;
-            }
-            else
-            {
-                ++it;
+                it = ErasePendingResetEntry(it);
+                continue;
             }
         }
+
+        if (bot && bot->IsInWorld() && IsBotSafeForLevelReset(bot))
+        {
+            AdjustBotToRange(bot, targetRange, it->factionRanges);
+            if (g_BotDistFullDebugMode)
+            {
+                LOG_INFO("server.loading", "[BotLevelBrackets] Bot '{}' successfully reset to level range {}-{}.", bot->GetName(), it->factionRanges[targetRange].lower, it->factionRanges[targetRange].upper);
+            }
+            it = ErasePendingResetEntry(it);
+            ++processed;
+            if (collectSkipDiagnostics)
+            {
+                ++skipStats.processed;
+            }
+        }
+        else
+        {
+            if (collectSkipDiagnostics)
+            {
+                ++skipStats.deferredUnsafe;
+            }
+            ++it;
+        }
+    }
+
+    if (collectSkipDiagnostics)
+    {
+        LogPendingResetSkipSummary(skipStats);
+    }
 }
 
 
@@ -1107,38 +1396,25 @@ static void ProcessPendingLevelResets()
  */
 static int GetOrFlagPlayerBracket(Player* player)
 {
-    if (IsPlayerBot(player) && IsBotExcluded(player))
-    {
-        return -1;
-    }
-
-    if (IsPlayerBot(player) && g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(player))
-    {
-        return -1;
-    }
-
-    if (IsPlayerBot(player) && g_IgnoreArenaTeamBots && BotInArenaTeam(player))
+    if (!IsEligibleRandomBot(player))
     {
         return -1;
     }
 
     // Check if bot is in a group with real players - if so, exclude from bracket processing
-    if (IsPlayerBot(player))
+    if (Group* group = player->GetGroup())
     {
-        if (Group* group = player->GetGroup())
+        for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
         {
-            for (GroupReference* ref = group->GetFirstMember(); ref; ref = ref->next())
+            Player* member = ref->GetSource();
+            if (member && member->IsInWorld() && !IsPlayerBot(member))
             {
-                Player* member = ref->GetSource();
-                if (member && member->IsInWorld() && !IsPlayerBot(member))
+                if (g_BotDistFullDebugMode)
                 {
-                    if (g_BotDistFullDebugMode)
-                    {
-                        LOG_INFO("server.loading", "[BotLevelBrackets] GetOrFlagPlayerBracket: Bot {} (Level {}) is in group with real player {} - excluding from bracket processing.",
-                                 player->GetName(), player->GetLevel(), member->GetName());
-                    }
-                    return -1;
+                    LOG_INFO("server.loading", "[BotLevelBrackets] GetOrFlagPlayerBracket: Bot {} (Level {}) is in group with real player {} - excluding from bracket processing.",
+                             player->GetName(), player->GetLevel(), member->GetName());
                 }
+                return -1;
             }
         }
     }
@@ -1196,19 +1472,11 @@ static int GetOrFlagPlayerBracket(Player* player)
 
     if (targetRange >= 0)
     {
-        bool alreadyFlagged = false;
         ObjectGuid guid = player->GetGUID();
-        for (const auto &entry : g_PendingLevelResets)
+        if (EnqueuePendingLevelReset(guid, targetRange, factionRanges) && g_BotDistFullDebugMode)
         {
-            if (entry.botGuid == guid)
-            {
-                alreadyFlagged = true;
-                break;
-            }
-        }
-        if (!alreadyFlagged)
-        {
-            g_PendingLevelResets.push_back({guid, targetRange, factionRanges});
+            LOG_INFO("server.loading", "[BotLevelBrackets] Bot '{}' flagged for pending level reset to range {}-{}.",
+                     player->GetName(), factionRanges[targetRange].lower, factionRanges[targetRange].upper);
         }
     }
 
@@ -1366,7 +1634,7 @@ public:
                     continue;
                 if (IsPlayerBot(player))
                     continue; // Only count real players.
-                int rangeIndex = GetOrFlagPlayerBracket(player);
+                int rangeIndex = GetLevelRangeIndex(player->GetLevel(), player->GetTeamId());
                 if (rangeIndex < 0)
                     continue;
                 if (player->GetTeamId() == TEAM_ALLIANCE)
@@ -1473,6 +1741,8 @@ public:
         uint32 totalHordeBots = 0;
         std::vector<int> hordeActualCounts(g_NumRanges, 0);
         std::vector< std::vector<Player*> > hordeBotsByRange(g_NumRanges);
+        bool collectSkipDiagnostics = IsSkipDiagnosticsEnabled();
+        DistributionSkipStats skipStats;
 
         if (g_BotDistFullDebugMode)
         {
@@ -1484,6 +1754,10 @@ public:
             Player* player = itr.second;
             if (!player)
             {
+                if (collectSkipDiagnostics)
+                {
+                    ++skipStats.nullPlayer;
+                }
                 if (g_BotDistFullDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Skipping null player.");
@@ -1492,22 +1766,34 @@ public:
             }
             if (!player->IsInWorld())
             {
+                if (collectSkipDiagnostics)
+                {
+                    ++skipStats.notInWorld;
+                }
                 if (g_BotDistFullDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Skipping player '{}' as they are not in world.", player->GetName());
                 }
                 continue;
             }
-            if (!IsPlayerBot(player) || !IsPlayerRandomBot(player))
+            if (!IsEligibleRandomBot(player))
             {
+                if (collectSkipDiagnostics)
+                {
+                    ++skipStats.notManagedRandomBot;
+                }
                 if (g_BotDistFullDebugMode)
                 {
-                    LOG_INFO("server.loading", "[BotLevelBrackets] Skipping player '{}' as they are not a random bot.", player->GetName());
+                    LOG_INFO("server.loading", "[BotLevelBrackets] Skipping player '{}' as they are not a managed random bot.", player->GetName());
                 }
                 continue;
             }
             if (IsBotExcluded(player))
             {
+                if (collectSkipDiagnostics)
+                {
+                    ++skipStats.excludedByName;
+                }
                 if (g_BotDistFullDebugMode)
                 {
                     LOG_INFO("server.loading", "[BotLevelBrackets] Skipping excluded bot '{}'.", player->GetName());
@@ -1516,14 +1802,29 @@ public:
             }
             if (g_IgnoreGuildBotsWithRealPlayers && BotInGuildWithRealPlayer(player))
             {
+                if (collectSkipDiagnostics)
+                {
+                    ++skipStats.guildWithRealPlayer;
+                    LogSkippedBot("Distribution", player, "guild with real players");
+                }
                 continue;
             }
             if (g_IgnoreFriendListed && BotInFriendList(player))
             {
+                if (collectSkipDiagnostics)
+                {
+                    ++skipStats.friendListed;
+                    LogSkippedBot("Distribution", player, "real player friend list");
+                }
                 continue;
             }
             if (g_IgnoreArenaTeamBots && BotInArenaTeam(player))
             {
+                if (collectSkipDiagnostics)
+                {
+                    ++skipStats.arenaTeam;
+                    LogSkippedBot("Distribution", player, "arena team member");
+                }
                 continue;
             }
             if (IsAlliancePlayerBot(player))
@@ -1542,6 +1843,10 @@ public:
                 }
                 else if (g_BotDistFullDebugMode)
                 {
+                    if (collectSkipDiagnostics)
+                    {
+                        ++skipStats.noBracketAssignment;
+                    }
                     LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' with level {} does not fall into any defined range.", player->GetName(), player->GetLevel());
                 }
             }
@@ -1561,9 +1866,18 @@ public:
                 }
                 else if (g_BotDistFullDebugMode)
                 {
+                    if (collectSkipDiagnostics)
+                    {
+                        ++skipStats.noBracketAssignment;
+                    }
                     LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' with level {} does not fall into any defined range.", player->GetName(), player->GetLevel());
                 }
             }
+        }
+
+        if (collectSkipDiagnostics)
+        {
+            LogDistributionSkipSummary(skipStats);
         }
 
         if (g_BotDistFullDebugMode || g_BotDistLiteDebugMode)
@@ -1631,19 +1945,8 @@ public:
                     }
 
                     // Only flag if not already flagged
-                    ObjectGuid botGuid = bot->GetGUID();
-                    bool alreadyFlagged = false;
-                    for (const auto& entry : g_PendingLevelResets)
+                    if (EnqueuePendingLevelReset(bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()))
                     {
-                        if (entry.botGuid == botGuid)
-                        {
-                            alreadyFlagged = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyFlagged)
-                    {
-                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Alliance bot '{}' flagged for pending level reset to range {}-{}.",
@@ -1671,22 +1974,11 @@ public:
                         continue;
                     }
 
-                    ObjectGuid botGuid = bot->GetGUID();
-                    bool alreadyFlagged = false;
-                    for (const auto& entry : g_PendingLevelResets)
+                    if (EnqueuePendingLevelReset(bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()))
                     {
-                        if (entry.botGuid == botGuid)
-                        {
-                            alreadyFlagged = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyFlagged)
-                    {
-                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_AllianceLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' flagged for pending level reset to range {}-{}.",
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Alliance flagged bot '{}' queued for pending level reset to range {}-{}.",
                                 bot->GetName(), g_AllianceLevelRanges[targetRange].lower, g_AllianceLevelRanges[targetRange].upper);
                         }
                     }
@@ -1752,19 +2044,8 @@ public:
                         continue;
                     }
 
-                    bool alreadyFlagged = false;
-                    ObjectGuid botGuid = bot->GetGUID();
-                    for (const auto& entry : g_PendingLevelResets)
+                    if (EnqueuePendingLevelReset(bot->GetGUID(), targetRange, g_HordeLevelRanges.data()))
                     {
-                        if (entry.botGuid == botGuid)
-                        {
-                            alreadyFlagged = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyFlagged)
-                    {
-                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
                             LOG_INFO("server.loading", "[BotLevelBrackets] Horde bot '{}' flagged for pending level reset to range {}-{}.",
@@ -1791,22 +2072,11 @@ public:
                         continue;
                     }
 
-                    bool alreadyFlagged = false;
-                    ObjectGuid botGuid = bot->GetGUID();
-                    for (const auto& entry : g_PendingLevelResets)
+                    if (EnqueuePendingLevelReset(bot->GetGUID(), targetRange, g_HordeLevelRanges.data()))
                     {
-                        if (entry.botGuid == botGuid)
-                        {
-                            alreadyFlagged = true;
-                            break;
-                        }
-                    }
-                    if (!alreadyFlagged)
-                    {
-                        g_PendingLevelResets.push_back({bot->GetGUID(), targetRange, g_HordeLevelRanges.data()});
                         if (g_BotDistFullDebugMode)
                         {
-                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' flagged for pending level reset to range {}-{}.",
+                            LOG_INFO("server.loading", "[BotLevelBrackets] Horde flagged bot '{}' queued for pending level reset to range {}-{}.",
                                 bot->GetName(), g_HordeLevelRanges[targetRange].lower, g_HordeLevelRanges[targetRange].upper);
                         }
                     }
