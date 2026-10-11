@@ -32,6 +32,31 @@ static bool IsHordePlayerBot(Player* bot);
 static void ClampAndBalanceBrackets();
 
 // -----------------------------------------------------------------------------
+// PLAYERBOTS CONFIG COMPATIBILITY
+// -----------------------------------------------------------------------------
+// Newer mod-playerbots renamed its PlayerbotAIConfig members to PascalCase
+// (equipAndSpecPersistence -> EquipAndSpecPersistence). These overloads read
+// whichever spelling the installed mod-playerbots has, so the module builds
+// against both. The int overload is preferred; the long one is only picked
+// when the new name does not exist.
+template <typename ConfigT>
+static auto GetEquipAndSpecPersistence(ConfigT const& config, int) -> decltype(config.EquipAndSpecPersistence)
+{
+    return config.EquipAndSpecPersistence;
+}
+
+template <typename ConfigT>
+static auto GetEquipAndSpecPersistence(ConfigT const& config, long) -> decltype(config.equipAndSpecPersistence)
+{
+    return config.equipAndSpecPersistence;
+}
+
+static bool IsEquipAndSpecPersistenceEnabled()
+{
+    return GetEquipAndSpecPersistence(sPlayerbotAIConfig, 0);
+}
+
+// -----------------------------------------------------------------------------
 // LEVEL RANGE CONFIGURATION
 // -----------------------------------------------------------------------------
 // Same boundaries for both factions; only desired percentages differ.
@@ -667,7 +692,7 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
 
     // Force reset talents if equipment and spec persistence is enabled and bot rolled to max level
     // This is to fix an issue with Playerbots and how randomization works with equipment and spec persistence
-    if (newLevel == g_RandomBotMaxLevel && sPlayerbotAIConfig.equipAndSpecPersistence)
+    if (newLevel == g_RandomBotMaxLevel && IsEquipAndSpecPersistenceEnabled())
     {
         PlayerbotFactory tempFactory(bot, newLevel);
         tempFactory.InitTalentsTree(false, true, true);
