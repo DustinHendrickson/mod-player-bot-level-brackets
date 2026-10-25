@@ -667,7 +667,7 @@ static void AdjustBotToRange(Player* bot, int targetRangeIndex, const LevelRange
 
     // Force reset talents if equipment and spec persistence is enabled and bot rolled to max level
     // This is to fix an issue with Playerbots and how randomization works with equipment and spec persistence
-    if (newLevel == g_RandomBotMaxLevel && sPlayerbotAIConfig.equipAndSpecPersistence)
+    if (newLevel == g_RandomBotMaxLevel && sPlayerbotAIConfig.EquipAndSpecPersistence)
     {
         PlayerbotFactory tempFactory(bot, newLevel);
         tempFactory.InitTalentsTree(false, true, true);
